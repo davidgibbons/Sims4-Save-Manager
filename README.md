@@ -10,6 +10,39 @@ A simple save file backup & restore tool for The Sims 4, designed for quick back
 ✅ Old saves are safely moved instead of deleted
 ✅ Modern UI with CustomTkinter for a polished look
 ✅ Automatically remembers selected folders
+
+📁 File Structure
+Sims4SaveManager/
+│── Backups/                 # Stores all backups (each in its own timestamped folder)
+│── sims_save_manager_v2.py  # The main script
+│── config.json              # Stores selected folders for quick access
+│── SimsSaveIcon.ico         # App icon
+│── README.md                # This file
+
+🛠️ Requirements
+✅ Python 3.8+
+✅ Install dependencies:
+
+pip install customtkinter
+
+📂 Version History
+This repository includes both the latest and original versions of the tool:
+
+🔹 V2 (Current Version - Recommended)
+📍 Location: Root of this repository (sims_save_manager_v2.py)
+
+    Full-featured and user-friendly.
+    Recommended for players who want more control over their backups.
+
+🔹 V1 (Legacy Version - Basic)
+📍 Location: /Sims4SaveManager-V1/ (Inside this repository)
+
+    The original, lightweight version.
+    Only provides basic save backup and restore without notes or UI improvements.
+    Available for those who prefer a minimalist approach.
+
+🛠 Installation & Usage
+
 💻 How to Use
 
     Download & Run
@@ -33,33 +66,30 @@ A simple save file backup & restore tool for The Sims 4, designed for quick back
         Select one and restore it.
         The current save files will be moved to a "Restored Backup" folder just in case.
 
-📁 File Structure
+📤 Backing Up Saves
+✅ Select your Sims 4 save folder & backup location.
+✅ Click “Backup Saves” to create a timestamped folder.
+✅ Add an optional note to describe the backup.
 
-Sims4SaveManager/
-│── Backups/                 # Stores all backups (each in its own timestamped folder)
-│── sims_save_manager_v2.py  # The main script
-│── config.json              # Stores selected folders for quick access
-│── SimsSaveIcon.ico         # App icon
-│── README.md                # This file
+📥 Restoring Saves
+✅ Click “Restore Saves” to see a list of backups.
+✅ Backup notes are displayed for quick reference.
+✅ Selecting a backup will move current saves before restoring.
 
-🛠️ Requirements
-
-✅ Python 3.8+
-✅ Install dependencies:
-
-pip install customtkinter
-
-🚀 Future Plans
-
-    Add support for other games with local save files
-    UI improvements & dark mode toggle
-    Auto-scheduled backups
+🛠 Future Plans
+✅ Convert V2 into a .exe for easier launching.
+✅ Improve UI for an even smoother experience.
+✅ Multi-save support for managing different game states.
+✅ Add support for other games with local save files
+✅ UI improvements & dark mode toggle
+✅ Auto-scheduled backups
 
 📜 License
-
 MIT License - Use, modify, and share freely!
-🤝 Contributions
 
+🤝 Contributions
 Want to help improve the Sims 4 Save Manager?
+
 Feel free to submit a pull request or open an issue!
+
 🌟 Enjoy hassle-free save management & never lose your Sims again! 🎮
