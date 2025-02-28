@@ -4,12 +4,12 @@ A simple save file backup & restore tool for The Sims 4, designed for quick back
 🚀 Never lose a save again!
 📜 Features
 
-✅ One-click backup of your Sims 4 save files
-✅ Add notes to each backup for easy reference
-✅ Restore any backup with a preview of all saved versions
-✅ Old saves are safely moved instead of deleted
-✅ Modern UI with CustomTkinter for a polished look
-✅ Automatically remembers selected folders
+    ✅ One-click backup of your Sims 4 save files
+    ✅ Add notes to each backup for easy reference
+    ✅ Restore any backup with a preview of all saved versions
+    ✅ Old saves are safely moved instead of deleted
+    ✅ Modern UI with CustomTkinter for a polished look
+    ✅ Automatically remembers selected folders
 
 📁 File Structure
 Sims4SaveManager/
@@ -20,8 +20,8 @@ Sims4SaveManager/
 │── README.md                # This file
 
 🛠️ Requirements
-✅ Python 3.8+
-✅ Install dependencies:
+    ✅ Python 3.8+
+    ✅ Install dependencies:
 
 pip install customtkinter
 
