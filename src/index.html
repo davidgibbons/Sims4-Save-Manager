@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Sims 4 Save Manager</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="renderer.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">◆</span><div><strong>Sims 4 Save Manager</strong><span>Make room for another chapter.</span></div></div>
+      <span id="header-status" class="status-chip">Connecting…</span>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Save Manager">
+      <button id="tab-game" role="tab" aria-selected="true" aria-controls="panel-game" tabindex="0">My game</button>
+      <button id="tab-library" role="tab" aria-selected="false" aria-controls="panel-library" tabindex="-1">Saved games</button>
+      <button id="tab-settings" role="tab" aria-selected="false" aria-controls="panel-settings" tabindex="-1">Settings</button>
+    </nav>
+    <main>
+      <aside id="trial-banner" class="trial-banner" aria-label="Game trial" hidden>
+        <div><strong id="trial-title"></strong><p>Your previous game is kept in Backups. Close The Sims 4 before switching.</p></div>
+        <div class="actions"><button id="return-saves">Return to my game</button><button id="keep-trial" class="primary">Keep this save</button></div>
+      </aside>
+      <div id="feedback" class="feedback" hidden><progress id="busy-progress" aria-label="Working" hidden></progress><span id="status" role="status" aria-live="polite"></span><details id="error-details" hidden><summary>Technical details</summary><pre id="error-text"></pre></details></div>
+
+      <section id="panel-game" role="tabpanel" aria-labelledby="tab-game" tabindex="0">
+        <div class="page-heading"><div><p class="eyebrow">A GOOD PLACE TO PICK UP AGAIN</p><h1>Your current game</h1><p>Keep a copy of your progress before starting another chapter.</p></div></div>
+        <section class="hero card" aria-labelledby="game-status-title">
+          <span class="hero-icon" aria-hidden="true">◆</span>
+          <div class="hero-copy"><span id="game-status-kicker" class="eyebrow">YOUR CURRENT GAME</span><h2 id="game-status-title">Connecting to your game…</h2><p id="game-status-copy"></p><p id="game-last-backup" class="muted"></p></div>
+          <button id="home-next" class="primary">Set up locations</button>
+        </section>
+        <div class="home-grid">
+          <section class="card" aria-labelledby="backup-title"><p class="eyebrow">KEEP THIS MOMENT</p><h2 id="backup-title">Make a backup now</h2><p>Keep a copy before a new build, a big wedding, or a fresh start.</p><label for="note">A note to remember it by <span class="muted">(optional)</span></label><input id="note" maxlength="10000" placeholder="Before the wedding"><button id="backup" class="primary">Back up now</button><p id="manual-help" class="hint"></p></section>
+          <section class="card discover-card" aria-labelledby="discover-title"><p class="eyebrow">REVISIT A CHAPTER</p><h2 id="discover-title">Looking for an older game?</h2><p>Browse your backups or bring in saves from another folder, computer, or drive.</p><p>You can try a different save and return to this game whenever you want.</p><button id="browse-games">Browse saved games <span aria-hidden="true">→</span></button></section>
+        </div>
+      </section>
+
+      <section id="panel-library" role="tabpanel" aria-labelledby="tab-library" tabindex="0" hidden>
+        <div class="page-heading"><div><h1>Saved games</h1><p>Find a familiar family. Pick a moment to revisit.</p></div><div class="actions"><button id="refresh">Refresh</button><button id="import-open" class="primary">Import saves…</button></div></div>
+        <div class="library-toolbar"><div class="filters" role="group" aria-label="Saved game collection"><button id="filter-backups" aria-pressed="true">Backups <span id="backup-count">0</span></button><button id="filter-imports" aria-pressed="false">Imported saves <span id="import-count">0</span></button></div><label class="search-label"><span class="sr-only">Search saved games</span><input id="library-search" type="search" placeholder="Search a name, family, or note"></label></div>
+        <p id="library-context" class="hint"></p>
+        <div class="library-layout"><section class="library-list card" aria-label="Saved games"><p id="library-empty" class="empty-message"></p><ul id="saved-list"></ul></section><section id="save-details" class="card detail-panel" aria-label="Selected saved game"><div class="empty-state"><span aria-hidden="true">◇</span><h2>A chapter worth finding</h2><p>Choose a saved game to see its details.</p></div></section></div>
+      </section>
+
+      <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0" hidden>
+        <div class="page-heading"><div><h1>Settings</h1><p>Connect your game and choose where its backups belong.</p></div></div>
+        <section class="card settings-card" aria-labelledby="locations-title"><div class="section-heading"><h2 id="locations-title">Locations</h2><button id="find-saves">Find my saves</button></div>
+          <div class="location-field"><label for="save-folder">Save location</label><p>The folder The Sims 4 reads and writes when you play.</p><div class="input-action"><input id="save-folder" readonly placeholder="Choose the folder your game uses"><button id="choose-save">Choose…</button></div><p id="save-location-status" class="hint"></p></div>
+          <ul id="candidates" aria-label="Detected save locations"></ul>
+          <div class="location-field"><label for="backup-folder">Backup location</label><p>Where this app keeps copies you can restore later. Keep this outside OneDrive or iCloud.</p><div class="input-action"><input id="backup-folder" readonly placeholder="Choose where to keep backups"><button id="choose-backup">Choose…</button></div><p id="backup-warning" class="warning-text"></p><button id="use-local" class="text-button">Use recommended location</button><p class="hint">Changing this location does not move existing copies.</p></div>
+        </section>
+        <section class="card settings-card" aria-labelledby="automatic-title"><h2 id="automatic-title">Automatic backups</h2><label class="check"><input id="auto-backup" type="checkbox"><span>Back up my saved changes automatically</span></label><p class="setting-help">The app waits for The Sims 4 to finish writing, then keeps a new copy. Older backups stay available.</p><label class="check"><input id="start-login" type="checkbox"><span>Start this app when I sign in</span></label><p id="login-help" class="setting-help">When automatic backups are on, closing the window leaves the app running in the tray or menu bar. Quit there to stop it.</p><details><summary>Backup status details</summary><p id="protection-status" class="technical"></p><p id="last-success" class="hint"></p></details></section>
+        <section class="card settings-card" aria-labelledby="updates-title"><div class="section-heading"><div><h2 id="updates-title">App updates</h2><p id="app-version" class="hint"></p></div><button id="update-action" disabled>Check for updates</button></div><p id="update-status" role="status" aria-live="polite">Loading update status…</p><progress id="update-progress" max="100" value="0" aria-label="Update download progress" hidden></progress></section>
+      </section>
+    </main>
+  </div>
+  <dialog id="import-dialog" aria-labelledby="import-title"><div class="dialog-heading"><div><p class="eyebrow">BRING YOUR STORIES WITH YOU</p><h2 id="import-title">Import saved games</h2></div><button id="import-close" class="icon-button" aria-label="Close import preview">×</button></div><p>Select the saves to copy into your Backup location. The original files stay unchanged.</p><p id="import-source" class="hint technical"></p><p id="import-summary" class="strong"></p><p id="import-warnings" class="warning-text"></p><label class="check"><input id="import-all" type="checkbox"> Select all available files</label><ul id="import-preview" class="import-preview"></ul><p id="import-error" class="warning-text" role="status"></p><div class="dialog-actions"><button id="import-cancel">Cancel</button><button id="import-confirm" class="primary" disabled>Import selected</button></div></dialog>
+</body>
+</html>
