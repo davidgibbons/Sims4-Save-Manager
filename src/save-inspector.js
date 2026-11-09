@@ -93,10 +93,13 @@ function metadata(resource) {
   const slot = fields(messages(root, 2)[0] || Buffer.alloc(0));
   const account = fields(messages(root, 3)[0] || Buffer.alloc(0));
   const neighborhoods = new Map(messages(root, 4).map(item => { const value = fields(item); return [identifier(value, 1), text(value, 3)]; }));
-  const zones = new Map(messages(root, 7).map(item => {
+  const zoneRecords = messages(root, 7);
+  const lots = zoneRecords.slice(0, 5000).map(item => {
     const value = fields(item);
-    return [identifier(value, 1), { id: identifier(value, 1), name: text(value, 2), neighborhood: neighborhoods.get(identifier(value, 10)) || '', worldId: scalar(value, 3) }];
-  }));
+    const count = number => { const recorded = Number(scalar(value, number) ?? NaN); return Number.isSafeInteger(recorded) ? recorded : null; };
+    return { id: identifier(value, 1), name: text(value, 2), neighborhoodId: identifier(value, 10), neighborhood: neighborhoods.get(identifier(value, 10)) || '', worldId: scalar(value, 3), description: text(value, 14), bedrooms: count(16), bathrooms: count(17), householdId: identifier(value, 6) };
+  });
+  const zones = new Map(lots.filter(lot => lot.id).map(lot => [lot.id, lot]));
   const simRecords = messages(root, 6);
   const people = simRecords.slice(0, 10000).map(item => {
     const value = fields(item);
@@ -107,8 +110,9 @@ function metadata(resource) {
   const householdDetails = householdRecords.slice(0, 1000).map(item => {
     const value = fields(item);
     const id = identifier(value, 2);
-    return { id, name: text(value, 3), description: text(value, 18), funds: scalar(value, 5), homeLot: zones.get(identifier(value, 4)) || null, lastPlayedSimId: identifier(value, 9), members: id ? people.filter(sim => sim.householdId === id) : [] };
+    return { id, name: text(value, 3), description: text(value, 18), funds: scalar(value, 5), homeLotId: identifier(value, 4), homeLot: zones.get(identifier(value, 4)) || null, lastPlayedSimId: identifier(value, 9), members: id ? people.filter(sim => sim.householdId === id) : [] };
   });
+  for (const lot of lots) lot.homeHouseholdIds = householdDetails.filter(household => lot.id && household.homeLotId === lot.id && household.id).map(household => household.id);
   const content = fields(messages(slot, 17)[0] || Buffer.alloc(0));
   const packIds = [];
   for (const value of content.get(1) || []) {
@@ -116,15 +120,15 @@ function metadata(resource) {
     else for (let offset = 0; offset < value.length;) { const item = integer(value, offset); packIds.push(item.value.toString()); offset = item.next; }
   }
   return {
-    metadataVersion: 1, saveName: text(slot, 9),
+    metadataVersion: 2, saveName: text(slot, 9),
     households: householdDetails.map(household => household.name).filter(Boolean), sims: people.map(sim => sim.name).filter(Boolean),
     householdCount: householdRecords.length, simCount: simRecords.length, householdDetails, simDetails: people,
     activeHousehold: householdDetails.find(household => household.id && household.id === identifier(slot, 11)) || null,
     activeHouseholdId: identifier(slot, 11), lastPlayedLocationId: identifier(slot, 5),
-    lastPlayedLocation: zones.get(identifier(slot, 5)) || null,
+    lastPlayedLocation: zones.get(identifier(slot, 5)) || null, lots, lotCount: zoneRecords.length,
     recordedTimestamp: scalar(slot, 10), gameVersion: text(account, 10), createdGameVersion: text(account, 17),
     requiredPacks: [...new Set(packIds)].map(id => ({ id, name: PACK_NAMES[id] || null })),
-    metadataTruncated: householdRecords.length > 1000 || simRecords.length > 10000
+    metadataTruncated: householdRecords.length > 1000 || simRecords.length > 10000 || zoneRecords.length > 5000
   };
 }
 

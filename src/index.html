@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Sims 4 Save Manager</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="library-search.js" defer></script>
   <script src="renderer.js" defer></script>
 </head>
 <body>
@@ -41,7 +42,7 @@
 
       <section id="panel-library" role="tabpanel" aria-labelledby="tab-library" tabindex="0" hidden>
         <div class="page-heading"><div><h1>Saved games</h1><p>Find a familiar family. Pick a moment to revisit.</p></div><div class="actions"><button id="refresh">Refresh</button><button id="import-open" class="primary">Import saves…</button></div></div>
-        <div class="library-toolbar"><div class="filters" role="group" aria-label="Saved game collection"><button id="filter-backups" aria-pressed="true">Backups <span id="backup-count">0</span></button><button id="filter-imports" aria-pressed="false">Imported saves <span id="import-count">0</span></button></div><label class="search-label"><span class="sr-only">Search saved games</span><input id="library-search" type="search" placeholder="Search a name, family, or note"></label></div>
+        <div class="library-toolbar"><div class="filters" role="group" aria-label="Saved game collection"><button id="filter-backups" aria-pressed="true">Backups <span id="backup-count">0</span></button><button id="filter-imports" aria-pressed="false">Imported saves <span id="import-count">0</span></button></div><div class="search-group"><label class="search-label"><span class="sr-only">Search saved games</span><input id="library-search" type="search" placeholder="Search a family, Sim, or note"></label><label id="search-scope" class="scope-label"><span class="sr-only">Search in</span><select id="library-search-scope"><option value="people">Families, Sims &amp; notes</option><option value="lots">Houses &amp; lots</option></select></label></div></div>
         <p id="library-context" class="hint"></p>
         <div class="library-layout"><section class="library-list card" aria-label="Saved games"><p id="library-empty" class="empty-message"></p><ul id="saved-list"></ul></section><section id="save-details" class="card detail-panel" aria-label="Selected saved game"><div class="empty-state"><span aria-hidden="true">◇</span><h2>A chapter worth finding</h2><p>Choose a saved game to see its details.</p></div></section></div>
       </section>

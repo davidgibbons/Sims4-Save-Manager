@@ -183,7 +183,7 @@ test('refresh reads an older imported record from its stored copy and preserves 
   const reopened = createArchive(options); await reopened.load();
   await reopened.refreshDetails(original.id);
   const refreshed = reopened.state().imports[0];
-  assert.equal(refreshed.saveName, 'Wedding'); assert.equal(refreshed.metadataVersion, 1);
+  assert.equal(refreshed.saveName, 'Wedding'); assert.equal(refreshed.metadataVersion, 2);
   for (const key of ['id', 'file', 'modified', 'slot', 'recoveryVersion', 'originalFile', 'originalName', 'importedAt']) assert.equal(refreshed[key], original[key]);
   assert.deepEqual(refreshed.annotation, { label: 'My wedding', notes: 'Found it', tried: true });
   assert.deepEqual(reopened.state().session, journal.session);

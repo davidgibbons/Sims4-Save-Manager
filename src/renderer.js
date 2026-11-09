@@ -1,4 +1,5 @@
 const byId = id => document.getElementById(id);
+const search = window.librarySearch;
 let current;
 let update;
 let working = false;
@@ -6,6 +7,7 @@ let activeTab = 'game';
 let collection = 'backups';
 const selected = { backups: null, imports: null };
 const drafts = new Map();
+const lotViews = new Map();
 let detailKey = null;
 let showCandidates = false;
 let lastAutomaticBackup;
@@ -58,6 +60,47 @@ function disclosure(title, id) {
   details.append(element('summary', title));
   return details;
 }
+const lotLine = lot => [lot.name || 'Unnamed lot', lot.neighborhood, lot.bedrooms != null && plural(lot.bedrooms, 'bedroom'), lot.bathrooms != null && plural(lot.bathrooms, 'bathroom')].filter(Boolean).join(' · ');
+function lotsSection(panel, entry) {
+  const preview = element('section', undefined, 'lot-preview'); preview.setAttribute('aria-labelledby', 'lot-preview-title');
+  const heading = element('h3', 'Houses and lots'); heading.id = 'lot-preview-title'; preview.append(heading); panel.append(preview);
+  const lots = entry.lots;
+  if (!Array.isArray(lots)) { preview.append(element('p', 'Houses and lots haven’t been read for this save yet. Choose Refresh at the top of Saved games.', 'hint')); return; }
+  const home = entry.activeHousehold?.homeLot;
+  if (home) preview.append(element('p', `Active household’s home · ${lotLine(home)}`));
+  const neighborhoods = new Set(lots.map(lot => lot.neighborhood).filter(Boolean)).size;
+  preview.append(element('p', `${plural(entry.lotCount ?? lots.length, 'lot')} recorded across ${plural(neighborhoods, 'neighborhood')}${entry.lotCount > lots.length ? `; the first ${lots.length.toLocaleString()} are shown` : ''}.`, 'hint'));
+  const matched = new Set(entry.match?.lotIds || []);
+  const matchedLots = lots.filter(lot => matched.has(lot.id));
+  if (matchedLots.length) preview.append(element('p', `Matching lots: ${matchedLots.slice(0, 5).map(lot => lot.name || 'Unnamed lot').join(', ')}${matchedLots.length > 5 ? ` + ${matchedLots.length - 5} more` : ''}`, 'lot-match'));
+  const view = lotViews.get(entry.hash) || { open: matchedLots.length > 0, filter: '', limit: 40 };
+  lotViews.set(entry.hash, view);
+  const browser = disclosure('Browse all houses and lots', 'lot-browser'); browser.open = view.open;
+  browser.addEventListener('toggle', () => { view.open = browser.open; });
+  const filterLabel = element('label', 'Find a lot by name, neighborhood, or description'); filterLabel.htmlFor = 'lot-filter';
+  const filter = element('input'); filter.id = 'lot-filter'; filter.type = 'search'; filter.value = view.filter;
+  const status = element('p', '', 'hint'); status.setAttribute('role', 'status');
+  const list = element('ul', undefined, 'lot-list');
+  const more = element('button', 'Show more lots', 'text-button');
+  const draw = () => {
+    const shown = [...search.filterLots(entry, view.filter)].sort((a, b) => Number(matched.has(b.id)) - Number(matched.has(a.id)));
+    list.replaceChildren();
+    for (const lot of shown.slice(0, view.limit)) {
+      const record = element('details', undefined, matched.has(lot.id) ? 'lot-record match' : 'lot-record');
+      record.append(element('summary', `${lotLine(lot)}${matched.has(lot.id) ? ' · Matches search' : ''}`));
+      facts(record, [['Neighborhood', lot.neighborhood || 'Unknown'], ['Bedrooms recorded', lot.bedrooms ?? 'Not recorded'], ['Bathrooms recorded', lot.bathrooms ?? 'Not recorded'], ['Household', search.lotHouseholds(entry, lot).join(', ') || 'None recorded'], ['Lot ID', lot.id || 'Unknown']]);
+      if (lot.description) record.append(element('p', lot.description, 'household-description'));
+      const item = element('li'); item.append(record); list.append(item);
+    }
+    status.textContent = `Showing ${Math.min(view.limit, shown.length).toLocaleString()} of ${plural(shown.length, 'lot')}`;
+    more.hidden = shown.length <= view.limit;
+  };
+  filter.addEventListener('input', () => { view.filter = filter.value; view.limit = 40; draw(); });
+  more.addEventListener('click', () => { view.limit += 40; draw(); });
+  browser.append(filterLabel, filter, element('p', 'Bedroom and bathroom counts are what the save recorded, not an inspection of the build. Lot size, value, type, and floor plans aren’t read.', 'hint'), status, list, more);
+  draw();
+  preview.append(browser);
+}
 function importedDetails(panel, entry) {
   const active = entry.activeHousehold;
   const summary = element('div', undefined, 'household-preview');
@@ -66,6 +109,7 @@ function importedDetails(panel, entry) {
   if (active?.homeLot?.name) summary.append(element('p', `Home · ${place(active.homeLot)}`, 'hint'));
   if (!active) summary.append(element('p', 'Search for a familiar Sim or family name, or expand Households and Sims below.', 'hint'));
   panel.append(summary);
+  lotsSection(panel, entry);
 
   const households = disclosure(`Households and Sims${entry.householdCount != null ? ` · ${plural(entry.householdCount, 'household')}` : ''}`, 'household-details');
   households.append(element('p', 'The active household is the family selected when the game was saved. Other households can include NPCs.', 'hint'));
@@ -114,7 +158,7 @@ function importedDetails(panel, entry) {
     return 'Save details refreshed. Your original file date, label, and notes were kept.';
   }));
   save.append(refresh); panel.append(save);
-  if (!entry.metadataVersion) panel.append(element('p', 'More details may be available. Choose Refresh above to read the details of your imported saves.', 'hint'));
+  if ((entry.metadataVersion || 0) < 2) panel.append(element('p', 'More details may be available. Choose Refresh above to read the details of your imported saves.', 'hint'));
 }
 
 function activateTab(name, focus = false) {
@@ -235,7 +279,7 @@ function render(state, preserveDetail = false) {
 }
 
 function libraryItems() {
-  return collection === 'backups' ? current.backups.map(entry => ({ ...entry, id: entry.name, title: backupTitle(entry), when: backupDate(entry.name) })) : current.archive.imports.map(entry => ({ ...entry, title: importedTitle(entry), when: entry.modified }));
+  return collection === 'backups' ? current.backups.map(entry => ({ ...entry, kind: 'backup', id: entry.name, title: backupTitle(entry), when: backupDate(entry.name) })) : current.archive.imports.map(entry => ({ ...entry, title: importedTitle(entry), when: entry.modified }));
 }
 function renderLibrary(preserveDetail = false) {
   if (!current) return;
@@ -244,12 +288,15 @@ function renderLibrary(preserveDetail = false) {
   for (const key of ['backups', 'imports']) byId(`filter-${key}`).setAttribute('aria-pressed', String(key === collection));
   byId('library-context').textContent = collection === 'backups' ? 'Backups contain the game’s save files at that moment. Restoring one replaces the current set.' : 'Imported saves are copies kept by this app. Try one, then return to your game or keep it.';
   if (collection === 'backups' && current.warning) byId('library-context').textContent = 'Your backups couldn’t be read. Check the Backup location in Settings, then refresh.';
-  const query = byId('library-search').value.toLowerCase().trim();
-  const items = libraryItems().filter(entry => (JSON.stringify(entry) + date(entry.when)).toLowerCase().includes(query));
+  const query = byId('library-search').value.trim();
+  const scope = collection === 'imports' ? byId('library-search-scope').value : 'people';
+  byId('search-scope').hidden = collection !== 'imports';
+  byId('library-search').placeholder = scope === 'lots' ? 'Search a house, lot, or neighborhood' : collection === 'imports' ? 'Search a family, Sim, or note' : 'Search a note or date';
+  const items = libraryItems().map(entry => ({ ...entry, match: search.matchSave(entry, query, scope, date(entry.when)) })).filter(entry => entry.match);
   if (!items.some(entry => entry.id === selected[collection])) selected[collection] = items[0]?.id || null;
   byId('saved-list').replaceChildren();
   byId('library-empty').hidden = items.length > 0;
-  byId('library-empty').textContent = query ? 'No saved games match your search. Try a family name, a date, or a note.' : collection === 'backups' ? 'Your backups will appear here. Make your first one from My game.' : 'Bring in saves from another folder or drive with Import saves. Originals stay where they are.';
+  byId('library-empty').textContent = query ? scope === 'lots' ? 'No houses or lots match your search. Choose Refresh to read lots from saves imported earlier.' : 'No saved games match your search. Try a family name, a date, or a note.' : collection === 'backups' ? 'Your backups will appear here. Make your first one from My game.' : 'Bring in saves from another folder or drive with Import saves. Originals stay where they are.';
   if (collection === 'backups' && current.warning) byId('library-empty').textContent = 'Backups are unavailable until this location can be read.';
   for (const entry of items) {
     const row = element('button', undefined, 'save-row');
@@ -261,6 +308,7 @@ function renderLibrary(preserveDetail = false) {
       const summary = element('span', rollup.text, 'save-rollup'); summary.title = rollup.detail;
       row.append(summary, element('span', `${day(entry.modified)} · ${size(entry.size)}${entry.annotation.tried ? ' · Tried' : ''}`));
     }
+    if (entry.match.hint) row.append(element('span', entry.match.hint, 'save-match'));
     row.addEventListener('click', () => { selected[collection] = entry.id; renderLibrary(); byId('save-details').focus({ preventScroll: true }); });
     const li = element('li'); li.append(row); byId('saved-list').append(li);
   }
@@ -377,6 +425,7 @@ async function refresh(quiet = false) {
 
 for (const key of ['backups', 'imports']) byId(`filter-${key}`).addEventListener('click', () => { collection = key; renderLibrary(); });
 byId('library-search').addEventListener('input', () => renderLibrary());
+byId('library-search-scope').addEventListener('change', () => renderLibrary());
 byId('browse-games').addEventListener('click', () => activateTab('library'));
 byId('home-next').addEventListener('click', () => {
   if (!locationsReady()) activateTab('settings');

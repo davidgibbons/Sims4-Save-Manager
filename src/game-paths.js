@@ -17,7 +17,7 @@ async function cloudRoots(home, env = process.env) {
   for (const base of [home, path.join(home, 'Library/CloudStorage')]) {
     try {
       for (const entry of await fs.readdir(base, { withFileTypes: true })) {
-        if (/^(OneDrive|Dropbox|GoogleDrive)(\b|[- ])/i.test(entry.name)) roots.push(path.join(base, entry.name));
+        if (/^(OneDrive|Dropbox|GoogleDrive|iCloudDrive)(\b|[- ])/i.test(entry.name)) roots.push(path.join(base, entry.name));
       }
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }

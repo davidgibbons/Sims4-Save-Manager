@@ -65,17 +65,17 @@ jobs:
         run: npm run dist:mac -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ env.RELEASE_TAG != '' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_TEAM_ID || '' }}
       - name: Build Windows installer and updates
         if: runner.os == 'Windows'
         run: npm run dist:win -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
         env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ env.RELEASE_TAG != '' && secrets.WIN_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}

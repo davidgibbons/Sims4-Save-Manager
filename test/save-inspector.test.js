@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { deflateSync } = require('node:zlib');
 const { parseMetadata, inspectSave } = require('../src/save-inspector');
+const { matchSave, filterLots, lotHouseholds } = require('../src/library-search');
 
 function varint(value) {
   value = BigInt(value); const bytes = [];
@@ -123,4 +124,56 @@ test('malformed internal compression is stopped by the worker deadline', async t
   const file = path.join(root, 'Slot_00000002.save');
   await fs.writeFile(file, bytes);
   assert.match((await inspectSave(file)).detail, /timed out|stopped/);
+});
+
+function lotSave({ family, sims, lots }) {
+  const familyId = 900n;
+  return parseMetadata(fixture(false, Buffer.concat([
+    field(2, Buffer.concat([field(9, 'Story'), number(11, familyId)])),
+    field(4, Buffer.concat([fixed(1, 42), field(3, 'Windenburg')])),
+    ...lots.map(([id, name, extra = Buffer.alloc(0)]) => field(7, Buffer.concat([fixed(1, id), field(2, name), fixed(10, 42), extra]))),
+    field(5, Buffer.concat([fixed(2, familyId), field(3, family), fixed(4, lots[0][0])])),
+    ...sims.map((name, index) => field(6, Buffer.concat([fixed(1, index + 1), fixed(4, familyId), field(5, name), field(6, family), number(8, 32)])))
+  ])));
+}
+
+test('reads every recorded lot with exact IDs, room counts, descriptions and household links', () => {
+  const home = 18446744073709551613n;
+  const result = lotSave({ family: 'Lightfeather', sims: ['Ana'], lots: [
+    [home, 'Cliffside Cottage', Buffer.concat([field(14, 'A breezy home'), number(16, 3), number(17, 2), fixed(6, 900)])],
+    [7n, 'Empty Lot']
+  ] });
+  assert.equal(result.metadataVersion, 2);
+  assert.equal(result.lotCount, 2);
+  const [cottage, empty] = result.lots;
+  assert.equal(cottage.id, home.toString());
+  assert.equal(cottage.neighborhood, 'Windenburg');
+  assert.equal(cottage.description, 'A breezy home');
+  assert.equal(cottage.bedrooms, 3); assert.equal(cottage.bathrooms, 2);
+  assert.equal(cottage.householdId, '900');
+  assert.deepEqual(cottage.homeHouseholdIds, ['900']);
+  assert.deepEqual([empty.bedrooms, empty.bathrooms, empty.description, empty.homeHouseholdIds], [null, null, '', []]);
+  assert.deepEqual(lotHouseholds(result, cottage), ['Lightfeather']);
+  assert.equal(result.activeHousehold.homeLot.name, 'Cliffside Cottage');
+});
+
+test('search defaults to families, Sims and notes; lots are a separate scope with matching hints', () => {
+  const feathers = { ...lotSave({ family: 'Lightfeather', sims: ['Ana', 'Joe', 'Kit'], lots: [[1n, 'Cliffside Cottage']] }), annotation: {} };
+  const lighthouse = { ...lotSave({ family: 'Goth', sims: ['Bella'], lots: [[1n, 'Goth Manor'], [2n, 'The Lighthouse', field(14, 'Watch the light at sea')]] }), annotation: { notes: 'Before the wedding' } };
+  const saves = [feathers, lighthouse];
+  const found = (query, scope) => saves.filter(entry => matchSave(entry, query, scope));
+  assert.deepEqual(found('Light'), [feathers]);
+  assert.deepEqual(found('feather'), [feathers]);
+  assert.deepEqual(found('wedding'), [lighthouse]);
+  assert.deepEqual(found('Light', 'lots'), [lighthouse]);
+  assert.deepEqual(found('windenburg', 'lots'), saves);
+  assert.equal(matchSave(feathers, 'feather').hint, 'Matches Family: Lightfeather · Sim: Ana Lightfeather, Joe Lightfeather +1');
+  const lots = matchSave(lighthouse, 'light', 'lots');
+  assert.equal(lots.hint, 'Matches Lot: The Lighthouse');
+  assert.deepEqual(lots.lotIds, ['2']);
+  assert.deepEqual(filterLots(lighthouse, 'sea').map(lot => lot.name), ['The Lighthouse']);
+  assert.equal(filterLots(lighthouse, '').length, 2);
+  assert.equal(matchSave(lighthouse, lighthouse.hash ?? '900'), null);
+  assert.deepEqual(matchSave(feathers, ''), { hint: '', lotIds: [] });
+  assert.equal(matchSave({ kind: 'backup', note: 'Automatic protective backup', title: 'Automatic backup' }, 'nov 9', 'people', 'Nov 9, 2026, 2:00 PM').hint, 'Matches Date: Nov 9, 2026, 2:00 PM');
 });

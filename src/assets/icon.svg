@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x2="0.8" y2="1"><stop stop-color="#39744d"/><stop offset="1" stop-color="#173e30"/></linearGradient>
+    <linearGradient id="folder" x2="0" y2="1"><stop stop-color="#fbfced"/><stop offset="1" stop-color="#dfeaca"/></linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="194" fill="url(#background)"/>
+  <path d="M210 438 Q210 390 258 390 H410 L462 432 H766 Q814 432 814 480 V746 Q814 794 766 794 H258 Q210 794 210 746Z" fill="#b5cd94"/>
+  <path d="M512 152 668 342 512 548 356 342Z" fill="#91dc61"/>
+  <path d="M512 152 512 342 356 342Z" fill="#d1f7a0"/>
+  <path d="M512 152 668 342 512 342Z" fill="#8bd152"/>
+  <path d="M356 342 512 342 512 548Z" fill="#5fa93f"/>
+  <path d="M512 342 668 342 512 548Z" fill="#367c3d"/>
+  <path d="M202 514 Q198 478 240 478 H784 Q826 478 822 514 L792 766 Q788 810 742 810 H282 Q236 810 232 766Z" fill="url(#folder)"/>
+  <path d="M386 648 A126 126 0 1 0 463 545" fill="none" stroke="#36734c" stroke-width="43" stroke-linecap="round"/>
+  <path d="M463 536 463 622 547 610" fill="none" stroke="#36734c" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

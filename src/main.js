@@ -11,6 +11,7 @@ const { createAutoBackup } = require('./auto-backup');
 const { SAVE_NAME } = require('./save-inspector');
 
 app.setName('Sims 4 Save Manager');
+const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
 
 let window;
 let tray;
@@ -80,7 +81,7 @@ function showWindow() {
 function createWindow() {
   window = new BrowserWindow({
     width: 1140, height: 900, minWidth: 760, minHeight: 640,
-    title: 'Sims 4 Save Manager', backgroundColor: '#f6f7f4', autoHideMenuBar: true,
+    title: 'Sims 4 Save Manager', icon: APP_ICON, backgroundColor: '#f6f7f4', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -129,6 +130,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', showWindow);
   app.whenReady().then(async () => {
+    if (process.platform === 'darwin' && !app.isPackaged) app.dock.setIcon(APP_ICON);
     const home = app.getPath('home');
     const documents = app.getPath('documents');
     roots = await cloudRoots(home);

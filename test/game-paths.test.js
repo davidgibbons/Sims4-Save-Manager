@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { contains, discoverSaves, assertLocalFolder } = require('../src/game-paths');
+const { contains, discoverSaves, assertLocalFolder, cloudRoots } = require('../src/game-paths');
 
 test('finds ordinary and redirected OneDrive saves without assuming the newest is active', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sims-path-'));
@@ -42,4 +42,14 @@ test('recognizes Windows DirectX variants and the Mac game process', () => {
   assert.equal(gameIsRunning('"TS4_DX9_x64.exe","1234","Console"'), true);
   assert.equal(gameIsRunning('/Applications/The Sims 4.app/Contents/MacOS/The Sims 4\n'), true);
   assert.equal(gameIsRunning('"EA.exe","1234","Console"'), false);
+});
+
+test('treats iCloud for Windows as a cloud-sync folder', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sims-icloud-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const icloud = path.join(home, 'iCloudDrive');
+  await fs.mkdir(path.join(icloud, 'Sims Backups'), { recursive: true });
+  const roots = await cloudRoots(home, {});
+  assert.ok(roots.includes(icloud));
+  await assert.rejects(assertLocalFolder(path.join(icloud, 'Sims Backups'), roots), /outside OneDrive/);
 });
