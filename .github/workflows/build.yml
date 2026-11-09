@@ -72,6 +72,7 @@ jobs:
           APPLE_TEAM_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_TEAM_ID || '' }}
       - name: Build Windows installer and updates
         if: runner.os == 'Windows'
+        shell: bash
         run: npm run dist:win -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
         env:
           CSC_LINK: ${{ env.RELEASE_TAG != '' && secrets.WIN_CSC_LINK || '' }}
