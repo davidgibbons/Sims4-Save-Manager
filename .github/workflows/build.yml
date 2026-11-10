@@ -62,7 +62,9 @@ jobs:
         run: node -e "for (const name of ['CSC_LINK', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) if (!process.env[name]) throw new Error('Missing release credential ' + name)"
       - name: Build macOS app and updates
         if: runner.os == 'macOS'
-        run: npm run dist:mac -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
+        run: |
+          if [ -z "$CSC_LINK" ]; then unset CSC_LINK; fi
+          npm run dist:mac -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           CSC_LINK: ${{ env.RELEASE_TAG != '' && secrets.MAC_CSC_LINK || '' }}
