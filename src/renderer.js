@@ -122,21 +122,19 @@ function lotPreview(record, entry, lot) {
   retry.addEventListener('click', () => void load());
 }
 function lotsSection(panel, entry) {
-  const preview = element('section', undefined, 'lot-preview'); preview.setAttribute('aria-labelledby', 'lot-preview-title');
-  const heading = element('h3', 'Houses and lots'); heading.id = 'lot-preview-title'; preview.append(heading); panel.append(preview);
+  const preview = element('section', undefined, 'lot-preview'); panel.append(preview);
   const lots = entry.lots;
   if (!Array.isArray(lots)) { preview.append(element('p', 'Houses and lots haven’t been read for this save yet. Choose Refresh at the top of Saved games.', 'hint')); return; }
   const home = entry.activeHousehold?.homeLot;
   if (home) preview.append(element('p', `Active household’s home · ${lotLine(home)}`));
-  preview.append(element('p', lotSummary(entry), 'hint'));
-  if (entry.metadataVersion >= 3) preview.append(element('p', `${plural(lots.filter(lot => lot.modification === 'modified').length, 'lot')} marked modified · ${plural(lots.filter(lot => lot.hasPreview).length, 'saved preview')}`, 'hint'));
-  else preview.append(element('p', 'Choose Refresh above to read modification flags and check for saved previews.', 'hint'));
   const matched = new Set(entry.match?.lotIds || []);
   const matchedLots = lots.filter(lot => matched.has(lot.id));
   if (matchedLots.length) preview.append(element('p', `Matching lots: ${matchedLots.slice(0, 5).map(lot => lot.name || 'Unnamed lot').join(', ')}${matchedLots.length > 5 ? ` + ${matchedLots.length - 5} more` : ''}`, 'lot-match'));
   const view = lotViews.get(entry.hash) || { open: matchedLots.length > 0, filter: '', limit: 40, modifiedOnly: true };
   lotViews.set(entry.hash, view);
-  const browser = disclosure('Browse all houses and lots', 'lot-browser'); browser.open = view.open;
+  const modifiedCount = entry.metadataVersion >= 3 ? `${plural(lots.filter(lot => lot.modification === 'modified').length, 'lot')} modified` : 'Modified count unknown';
+  const neighborhoods = new Set(lots.map(lot => lot.neighborhood).filter(Boolean)).size;
+  const browser = disclosure(`Browse all houses and lots · ${modifiedCount}, ${plural(entry.lotCount ?? lots.length, 'lot')} total, ${plural(neighborhoods, 'neighborhood')}`, 'lot-browser'); browser.open = view.open;
   browser.addEventListener('toggle', () => { view.open = browser.open; });
   const filterLabel = element('label', 'Find a lot by name, neighborhood, or description'); filterLabel.htmlFor = 'lot-filter';
   const filter = element('input'); filter.id = 'lot-filter'; filter.type = 'search'; filter.value = view.filter;
@@ -146,8 +144,13 @@ function lotsSection(panel, entry) {
   const status = element('p', '', 'hint'); status.setAttribute('role', 'status');
   const list = element('ul', undefined, 'lot-list');
   const more = element('button', 'Show more lots', 'text-button');
+  const hiddenMatches = element('p', undefined, 'hint');
+  const revealMatches = element('button', 'Show hidden matches', 'text-button'); revealMatches.id = 'show-hidden-lot-matches';
   const draw = () => {
     const shown = search.filterLots(entry, view.filter, !!view.modifiedOnly).sort((a, b) => Number(matched.has(b.id)) - Number(matched.has(a.id)));
+    const hiddenCount = view.modifiedOnly ? search.filterLots(entry, view.filter).filter(lot => matched.has(lot.id) && lot.modification !== 'modified').length : 0;
+    hiddenMatches.textContent = `${plural(hiddenCount, 'search match')} hidden by “Modified lots only”.`;
+    hiddenMatches.hidden = revealMatches.hidden = hiddenCount === 0;
     list.replaceChildren();
     for (const lot of shown.slice(0, view.limit)) {
       const record = element('details', undefined, matched.has(lot.id) ? 'lot-record match' : 'lot-record');
@@ -165,8 +168,9 @@ function lotsSection(panel, entry) {
   };
   filter.addEventListener('input', () => { view.filter = filter.value; view.limit = 40; draw(); });
   modified.addEventListener('change', () => { view.modifiedOnly = modified.checked; view.limit = 40; draw(); });
+  revealMatches.addEventListener('click', () => { modified.checked = view.modifiedOnly = false; view.limit = 40; browser.open = true; draw(); });
   more.addEventListener('click', () => { view.limit += 40; draw(); });
-  browser.append(filterLabel, filter, modifiedLabel, element('p', 'Modified means the game marked a change from the lot template; it doesn’t identify who made it. Unknown does not mean stock. Room counts and images are saved records, not a fresh inspection of the house.', 'hint'), status, list, more);
+  browser.append(filterLabel, filter, modifiedLabel, hiddenMatches, revealMatches, element('p', 'Modified means the game marked a change from the lot template; it doesn’t identify who made it. Unknown does not mean stock. Room counts and images are saved records, not a fresh inspection of the house.', 'hint'), status, list, more);
   draw();
   preview.append(browser);
 }
@@ -180,7 +184,8 @@ function importedDetails(panel, entry) {
   panel.append(summary);
   lotsSection(panel, entry);
 
-  const households = disclosure(`Households and Sims${entry.householdCount != null ? ` · ${plural(entry.householdCount, 'household')}` : ''}`, 'household-details');
+  const playerCount = entry.metadataVersion >= 4 ? plural(search.filterHouseholds(entry, true).length, 'Player household') : 'Player count unknown';
+  const households = disclosure(`Households and Sims · ${playerCount}, ${(entry.householdCount ?? entry.householdDetails?.length ?? 0).toLocaleString()} total`, 'household-details');
   households.append(element('p', 'The active household is the family selected when the game was saved. Other households can include NPCs.', 'hint'));
   const playerLabel = element('label', undefined, 'check');
   const playerOnly = element('input'); playerOnly.id = 'player-households-only'; playerOnly.type = 'checkbox'; playerOnly.checked = householdViews.get(entry.hash) ?? true;
