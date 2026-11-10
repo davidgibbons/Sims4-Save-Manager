@@ -62,11 +62,10 @@ function disclosure(title, id) {
   return details;
 }
 const lotLine = lot => [lot.name || 'Unnamed lot', lot.neighborhood, lot.bedrooms != null && plural(lot.bedrooms, 'bedroom'), lot.bathrooms != null && plural(lot.bathrooms, 'bathroom')].filter(Boolean).join(' · ');
-function lotSummary(entry, compact = false) {
+function lotSummary(entry) {
   if (!Array.isArray(entry.lots)) return 'Lot details not read yet · Refresh to load';
   const neighborhoods = new Set(entry.lots.map(lot => lot.neighborhood).filter(Boolean)).size;
-  if (compact) return `${plural(entry.lotCount ?? entry.lots.length, 'Lot')}, ${plural(neighborhoods, 'Neighborhood')}`;
-  return `${plural(entry.lotCount ?? entry.lots.length, 'lot')} recorded across ${plural(neighborhoods, 'neighborhood')}${entry.lotCount > entry.lots.length ? `; the first ${entry.lots.length.toLocaleString()} are shown` : ''}.`;
+  return `${plural(entry.lotCount ?? entry.lots.length, 'Lot')}, ${plural(neighborhoods, 'Neighborhood')}`;
 }
 const modificationLabel = lot => lot.modification === 'modified' ? 'Modified' : lot.modification === 'unmodified' ? 'Unmodified' : 'Unknown';
 async function previewCanvas(preview) {
@@ -149,7 +148,7 @@ function lotsSection(panel, entry) {
   const draw = () => {
     const shown = search.filterLots(entry, view.filter, !!view.modifiedOnly).sort((a, b) => Number(matched.has(b.id)) - Number(matched.has(a.id)));
     const hiddenCount = view.modifiedOnly ? search.filterLots(entry, view.filter).filter(lot => matched.has(lot.id) && lot.modification !== 'modified').length : 0;
-    hiddenMatches.textContent = `${plural(hiddenCount, 'search match')} hidden by “Modified lots only”.`;
+    hiddenMatches.textContent = `${hiddenCount.toLocaleString()} search ${hiddenCount === 1 ? 'match' : 'matches'} hidden by “Modified lots only”.`;
     hiddenMatches.hidden = revealMatches.hidden = hiddenCount === 0;
     list.replaceChildren();
     for (const lot of shown.slice(0, view.limit)) {
@@ -391,7 +390,7 @@ function renderLibrary(preserveDetail = false) {
     const row = element('button', undefined, 'save-row');
     row.setAttribute('aria-current', String(entry.id === selected[collection]));
     row.append(element('strong', entry.title));
-    row.append(element('span', collection === 'backups' ? `${plural(entry.count, 'save file')} · ${date(entry.when)}` : lotSummary(entry, true)));
+    row.append(element('span', collection === 'backups' ? `${plural(entry.count, 'save file')} · ${date(entry.when)}` : lotSummary(entry)));
     if (collection === 'imports') {
       const rollup = saveRollup(entry);
       const summary = element('span', rollup.text, 'save-rollup'); summary.title = rollup.detail;
