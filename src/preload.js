@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('saves', {
   scanArchive: () => ipcRenderer.invoke('scan-archive'),
   annotateSave: (id, annotation) => ipcRenderer.invoke('annotate-save', id, annotation),
   refreshSaveDetails: id => ipcRenderer.invoke('refresh-save-details', id),
+  lotPreview: (id, lotId) => ipcRenderer.invoke('lot-preview', id, lotId),
   importSaves: ids => ipcRenderer.invoke('import-saves', ids),
   keepTrial: () => ipcRenderer.invoke('keep-trial'),
   trySave: id => ipcRenderer.invoke('try-save', id),

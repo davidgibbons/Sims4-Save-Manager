@@ -167,7 +167,8 @@ test('renaming the save being tried updates the trial banner name', async t => {
 test('refresh reads an older imported record from its stored copy and preserves its identity, notes and trial', async t => {
   const { old, saves, options, archive } = await setup(t);
   const field = (number, text) => { const bytes = Buffer.isBuffer(text) ? text : Buffer.from(text); return Buffer.concat([Buffer.from([number * 8 + 2, bytes.length]), bytes]); };
-  const proto = field(2, field(9, 'Wedding'));
+  const lotId = Buffer.alloc(9); lotId[0] = 9; lotId.writeBigUInt64LE(42n, 1);
+  const proto = Buffer.concat([field(2, field(9, 'Wedding')), field(7, Buffer.concat([lotId, field(2, 'Wedding home')]))]);
   const header = Buffer.alloc(96); header.write('DBPF'); header.writeUInt32LE(2, 4); header.writeUInt32LE(1, 8); header.writeUInt32LE(1, 36); header.writeUInt32LE(96, 40);
   const index = Buffer.alloc(34); index.writeUInt32LE(13, 4); index.writeUInt32LE(130, 20); index.writeUInt32LE(proto.length, 24); index.writeUInt32LE(proto.length, 28);
   const bytes = Buffer.concat([header, index, proto]);
@@ -183,14 +184,21 @@ test('refresh reads an older imported record from its stored copy and preserves 
   const reopened = createArchive(options); await reopened.load();
   await reopened.refreshDetails(original.id);
   const refreshed = reopened.state().imports[0];
-  assert.equal(refreshed.saveName, 'Wedding'); assert.equal(refreshed.metadataVersion, 2);
+  assert.equal(refreshed.saveName, 'Wedding'); assert.equal(refreshed.metadataVersion, 4);
   for (const key of ['id', 'file', 'modified', 'slot', 'recoveryVersion', 'originalFile', 'originalName', 'importedAt']) assert.equal(refreshed[key], original[key]);
   assert.deepEqual(refreshed.annotation, { label: 'My wedding', notes: 'Found it', tried: true });
   assert.deepEqual(reopened.state().session, journal.session);
   assert.deepEqual(await fs.readFile(refreshed.file), bytes);
+  const beforePreview = await fs.readFile(options.file);
+  assert.equal(await reopened.lotPreview(original.id, '42'), null);
+  await assert.rejects(reopened.lotPreview(original.id, '../42'), /select a recorded lot/);
+  await assert.rejects(reopened.lotPreview('not-imported', '42'), /select a recorded lot/);
+  assert.deepEqual(await fs.readFile(options.file), beforePreview);
   const restarted = createArchive(options); await restarted.load(); assert.equal(restarted.state().imports[0].saveName, 'Wedding');
   await restarted.returnToPrevious();
   assert.equal(await fs.readFile(path.join(saves, 'Slot_00000009.save'), 'utf8'), 'DBPF current');
+  await fs.writeFile(refreshed.file, 'changed');
+  await assert.rejects(restarted.lotPreview(original.id, '42'), /stored save changed/);
 });
 
 test('refresh rejects changed or unreadable copies without rewriting library details', async t => {

@@ -20,10 +20,13 @@
   function lotMatches(lot, query) {
     return [lot.name, lot.neighborhood, lot.description].some(value => normalize(value).includes(query));
   }
-  function filterLots(entry, query) {
+  function filterLots(entry, query, modifiedOnly = false) {
     query = normalize(query);
     const lots = entry.lots || [];
-    return query ? lots.filter(lot => lotMatches(lot, query)) : lots;
+    return lots.filter(lot => (!modifiedOnly || lot.modification === 'modified') && (!query || lotMatches(lot, query)));
+  }
+  function filterHouseholds(entry, playerOnly = false) {
+    return (entry.householdDetails || []).filter(household => !playerOnly || household.isPlayer === true);
   }
 
   function fieldsFor(entry, dateText) {
@@ -52,5 +55,5 @@
     return { hint: `Matches ${found.slice(0, 2).map(([kind, hits]) => summarize(kind, hits)).join(' · ')}`, lotIds: [] };
   }
 
-  return { SCOPES, matchSave, filterLots, lotHouseholds };
+  return { SCOPES, matchSave, filterLots, filterHouseholds, lotHouseholds };
 });

@@ -94,6 +94,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 .household-record .facts { border: 0; padding-top: 0; }
 .household-description { white-space: pre-wrap; }
 .member-list { padding-left: 18px; color: #52675a; font-size: 13px; line-height: 1.9; }
+.lot-status { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 20px; background: #edf0e9; color: #657568; font-size: 11px; font-weight: 500; }
+.lot-status.modified { background: #dfeeda; color: #315e37; }
+.lot-preview-image { margin: 16px 0; }
+.lot-preview-image canvas { display: block; max-width: 100%; max-height: 320px; width: auto; height: auto; margin: 0 auto 12px; }
+.lot-preview-image figcaption { text-align: center; margin: 0; }
 .detail-panel .save-notes { margin-top: 12px; }
 .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-top: 1px solid var(--border); padding-top: 18px; margin: 18px 0; }
 .facts dt { color: var(--muted); font-size: 11px; margin-bottom: 5px; }

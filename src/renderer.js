@@ -8,6 +8,7 @@ let collection = 'backups';
 const selected = { backups: null, imports: null };
 const drafts = new Map();
 const lotViews = new Map();
+const householdViews = new Map();
 let detailKey = null;
 let showCandidates = false;
 let lastAutomaticBackup;
@@ -61,6 +62,65 @@ function disclosure(title, id) {
   return details;
 }
 const lotLine = lot => [lot.name || 'Unnamed lot', lot.neighborhood, lot.bedrooms != null && plural(lot.bedrooms, 'bedroom'), lot.bathrooms != null && plural(lot.bathrooms, 'bathroom')].filter(Boolean).join(' · ');
+function lotSummary(entry, compact = false) {
+  if (!Array.isArray(entry.lots)) return 'Lot details not read yet · Refresh to load';
+  const neighborhoods = new Set(entry.lots.map(lot => lot.neighborhood).filter(Boolean)).size;
+  if (compact) return `${plural(entry.lotCount ?? entry.lots.length, 'Lot')}, ${plural(neighborhoods, 'Neighborhood')}`;
+  return `${plural(entry.lotCount ?? entry.lots.length, 'lot')} recorded across ${plural(neighborhoods, 'neighborhood')}${entry.lotCount > entry.lots.length ? `; the first ${entry.lots.length.toLocaleString()} are shown` : ''}.`;
+}
+const modificationLabel = lot => lot.modification === 'modified' ? 'Modified' : lot.modification === 'unmodified' ? 'Unmodified' : 'Unknown';
+async function previewCanvas(preview) {
+  const load = async url => { const image = new Image(); image.src = url; await image.decode(); return image; };
+  const image = await load(preview.image);
+  if (image.naturalWidth !== preview.width || image.naturalHeight !== preview.height) throw new Error('Preview dimensions changed.');
+  const canvas = document.createElement('canvas'); canvas.width = preview.width; canvas.height = preview.height;
+  const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+  if (preview.mask) {
+    const mask = await load(preview.mask);
+    if (mask.naturalWidth !== preview.width || mask.naturalHeight !== preview.height) throw new Error('Preview transparency dimensions changed.');
+    const maskCanvas = document.createElement('canvas'); maskCanvas.width = canvas.width; maskCanvas.height = canvas.height;
+    const maskContext = maskCanvas.getContext('2d'); maskContext.drawImage(mask, 0, 0);
+    const alpha = maskContext.getImageData(0, 0, canvas.width, canvas.height).data;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
+    for (let index = 0; index < alpha.length; index += 4) {
+      pixels.data[index + 3] = alpha[index];
+      if (alpha[index]) { const pixel = index / 4; const x = pixel % canvas.width; const y = Math.floor(pixel / canvas.width); left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
+    }
+    if (right < left) return null;
+    context.putImageData(pixels, 0, 0);
+    const cropped = document.createElement('canvas'); cropped.width = right - left + 1; cropped.height = bottom - top + 1;
+    cropped.getContext('2d').drawImage(canvas, left, top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
+    return cropped;
+  }
+  return canvas;
+}
+function lotPreview(record, entry, lot) {
+  const figure = element('figure', undefined, 'lot-preview-image');
+  const status = element('p', lot.hasPreview === undefined ? 'Refresh this save to check for a saved preview.' : lot.hasPreview ? 'Expand this lot to load its saved preview.' : 'No saved preview is stored for this lot.', 'hint');
+  const retry = element('button', 'Try loading the preview again', 'text-button'); retry.hidden = true;
+  figure.append(status, retry); record.append(figure);
+  let requested = false;
+  const load = async () => {
+    if (!lot.hasPreview || requested) return;
+    requested = true; retry.hidden = true; status.textContent = 'Loading saved preview…';
+    try {
+      const preview = await invoke(window.saves.lotPreview(entry.id, lot.id));
+      if (!preview) { status.textContent = 'No saved preview is stored for this lot.'; return; }
+      const canvas = await previewCanvas(preview);
+      if (!canvas) { status.textContent = 'No visible house preview was saved for this lot.'; return; }
+      canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', `Saved preview of ${lot.name || 'this lot'}`);
+      if (!figure.isConnected) return;
+      status.hidden = true; figure.append(canvas, element('figcaption', 'Saved by The Sims 4 · may not reflect the latest edits.', 'hint'));
+    } catch (error) {
+      requested = false;
+      status.textContent = /Wait for the current operation/.test(error.message) ? 'A save operation is in progress. Try loading the preview again shortly.' : /ENOENT|EACCES|EPERM/.test(error.message) ? 'The stored save couldn’t be accessed. Reconnect its drive or check folder permissions, then try again.' : 'This saved preview couldn’t be displayed. Other save details are still available.';
+      retry.hidden = false;
+    }
+  };
+  record.addEventListener('toggle', () => { if (record.open) void load(); });
+  retry.addEventListener('click', () => void load());
+}
 function lotsSection(panel, entry) {
   const preview = element('section', undefined, 'lot-preview'); preview.setAttribute('aria-labelledby', 'lot-preview-title');
   const heading = element('h3', 'Houses and lots'); heading.id = 'lot-preview-title'; preview.append(heading); panel.append(preview);
@@ -68,36 +128,45 @@ function lotsSection(panel, entry) {
   if (!Array.isArray(lots)) { preview.append(element('p', 'Houses and lots haven’t been read for this save yet. Choose Refresh at the top of Saved games.', 'hint')); return; }
   const home = entry.activeHousehold?.homeLot;
   if (home) preview.append(element('p', `Active household’s home · ${lotLine(home)}`));
-  const neighborhoods = new Set(lots.map(lot => lot.neighborhood).filter(Boolean)).size;
-  preview.append(element('p', `${plural(entry.lotCount ?? lots.length, 'lot')} recorded across ${plural(neighborhoods, 'neighborhood')}${entry.lotCount > lots.length ? `; the first ${lots.length.toLocaleString()} are shown` : ''}.`, 'hint'));
+  preview.append(element('p', lotSummary(entry), 'hint'));
+  if (entry.metadataVersion >= 3) preview.append(element('p', `${plural(lots.filter(lot => lot.modification === 'modified').length, 'lot')} marked modified · ${plural(lots.filter(lot => lot.hasPreview).length, 'saved preview')}`, 'hint'));
+  else preview.append(element('p', 'Choose Refresh above to read modification flags and check for saved previews.', 'hint'));
   const matched = new Set(entry.match?.lotIds || []);
   const matchedLots = lots.filter(lot => matched.has(lot.id));
   if (matchedLots.length) preview.append(element('p', `Matching lots: ${matchedLots.slice(0, 5).map(lot => lot.name || 'Unnamed lot').join(', ')}${matchedLots.length > 5 ? ` + ${matchedLots.length - 5} more` : ''}`, 'lot-match'));
-  const view = lotViews.get(entry.hash) || { open: matchedLots.length > 0, filter: '', limit: 40 };
+  const view = lotViews.get(entry.hash) || { open: matchedLots.length > 0, filter: '', limit: 40, modifiedOnly: true };
   lotViews.set(entry.hash, view);
   const browser = disclosure('Browse all houses and lots', 'lot-browser'); browser.open = view.open;
   browser.addEventListener('toggle', () => { view.open = browser.open; });
   const filterLabel = element('label', 'Find a lot by name, neighborhood, or description'); filterLabel.htmlFor = 'lot-filter';
   const filter = element('input'); filter.id = 'lot-filter'; filter.type = 'search'; filter.value = view.filter;
+  const modifiedLabel = element('label', undefined, 'check');
+  const modified = element('input'); modified.id = 'modified-lots-only'; modified.type = 'checkbox'; modified.checked = !!view.modifiedOnly;
+  modifiedLabel.append(modified, element('span', 'Modified lots only'));
   const status = element('p', '', 'hint'); status.setAttribute('role', 'status');
   const list = element('ul', undefined, 'lot-list');
   const more = element('button', 'Show more lots', 'text-button');
   const draw = () => {
-    const shown = [...search.filterLots(entry, view.filter)].sort((a, b) => Number(matched.has(b.id)) - Number(matched.has(a.id)));
+    const shown = search.filterLots(entry, view.filter, !!view.modifiedOnly).sort((a, b) => Number(matched.has(b.id)) - Number(matched.has(a.id)));
     list.replaceChildren();
     for (const lot of shown.slice(0, view.limit)) {
       const record = element('details', undefined, matched.has(lot.id) ? 'lot-record match' : 'lot-record');
       record.append(element('summary', `${lotLine(lot)}${matched.has(lot.id) ? ' · Matches search' : ''}`));
-      facts(record, [['Neighborhood', lot.neighborhood || 'Unknown'], ['Bedrooms recorded', lot.bedrooms ?? 'Not recorded'], ['Bathrooms recorded', lot.bathrooms ?? 'Not recorded'], ['Household', search.lotHouseholds(entry, lot).join(', ') || 'None recorded'], ['Lot ID', lot.id || 'Unknown']]);
+      record.querySelector('summary').append(element('span', modificationLabel(lot), `lot-status ${lot.modification === 'modified' ? 'modified' : ''}`));
+      lotPreview(record, entry, lot);
+      facts(record, [['Building status', modificationLabel(lot)], ['Neighborhood', lot.neighborhood || 'Unknown'], ['Bedrooms recorded', lot.bedrooms ?? 'Not recorded'], ['Bathrooms recorded', lot.bathrooms ?? 'Not recorded'], ['Household', search.lotHouseholds(entry, lot).join(', ') || 'None recorded'], ['Lot ID', lot.id || 'Unknown']]);
       if (lot.description) record.append(element('p', lot.description, 'household-description'));
       const item = element('li'); item.append(record); list.append(item);
     }
-    status.textContent = `Showing ${Math.min(view.limit, shown.length).toLocaleString()} of ${plural(shown.length, 'lot')}`;
+    status.textContent = `Showing ${Math.min(view.limit, shown.length).toLocaleString()} of ${plural(entry.lotCount ?? lots.length, 'lot')}`;
+    if ((view.modifiedOnly || view.filter.trim()) && shown.length > view.limit) status.textContent += ` · ${shown.length.toLocaleString()} match this filter`;
+    if (!shown.length) status.textContent += view.modifiedOnly ? ' · No lots marked modified match this filter. Lots with unknown status are excluded.' : ' · No lots match this filter.';
     more.hidden = shown.length <= view.limit;
   };
   filter.addEventListener('input', () => { view.filter = filter.value; view.limit = 40; draw(); });
+  modified.addEventListener('change', () => { view.modifiedOnly = modified.checked; view.limit = 40; draw(); });
   more.addEventListener('click', () => { view.limit += 40; draw(); });
-  browser.append(filterLabel, filter, element('p', 'Bedroom and bathroom counts are what the save recorded, not an inspection of the build. Lot size, value, type, and floor plans aren’t read.', 'hint'), status, list, more);
+  browser.append(filterLabel, filter, modifiedLabel, element('p', 'Modified means the game marked a change from the lot template; it doesn’t identify who made it. Unknown does not mean stock. Room counts and images are saved records, not a fresh inspection of the house.', 'hint'), status, list, more);
   draw();
   preview.append(browser);
 }
@@ -113,29 +182,44 @@ function importedDetails(panel, entry) {
 
   const households = disclosure(`Households and Sims${entry.householdCount != null ? ` · ${plural(entry.householdCount, 'household')}` : ''}`, 'household-details');
   households.append(element('p', 'The active household is the family selected when the game was saved. Other households can include NPCs.', 'hint'));
-  if (entry.householdDetails?.length) {
-    const ordered = [...entry.householdDetails].sort((a, b) => Number(b.id === active?.id) - Number(a.id === active?.id));
+  const playerLabel = element('label', undefined, 'check');
+  const playerOnly = element('input'); playerOnly.id = 'player-households-only'; playerOnly.type = 'checkbox'; playerOnly.checked = householdViews.get(entry.hash) ?? true;
+  playerLabel.append(playerOnly, element('span', 'Player households only'));
+  const householdStatus = element('p', '', 'hint'); householdStatus.id = 'household-count-status'; householdStatus.setAttribute('role', 'status');
+  const householdList = element('div');
+  households.append(playerLabel, element('p', 'Uses the game’s player-household flag. This can include premade families you took over; it does not mean created from scratch.', 'hint'));
+  if (entry.metadataVersion < 4) households.append(element('p', 'Choose Refresh above to read player-household flags for this save.', 'hint'));
+  households.append(householdStatus, householdList);
+  const drawHouseholds = () => {
+    householdList.replaceChildren();
+    const shown = search.filterHouseholds(entry, playerOnly.checked);
+    householdStatus.textContent = `Showing ${shown.length.toLocaleString()} of ${plural(entry.householdCount ?? entry.householdDetails?.length ?? 0, 'household')}`;
+    if (!shown.length) householdList.append(element('p', playerOnly.checked ? 'No households are marked as player households. Uncheck this filter to see other or unknown households.' : entry.households?.join(', ') || 'Household names unknown.', 'hint'));
+    const ordered = shown.sort((a, b) => Number(b.id === active?.id) - Number(a.id === active?.id));
     for (const household of ordered) {
       const details = element('details', undefined, 'household-record');
       details.open = !!active?.id && household.id === active.id;
       details.append(element('summary', `${household.name || 'Unnamed household'}${household.id && household.id === active?.id ? ' · Active household' : ''}`));
       const funds = /^\d+$/.test(household.funds ?? '') ? `§${BigInt(household.funds).toLocaleString()}` : 'Unknown';
-      facts(details, [['Home', place(household.homeLot)], ['Household funds', funds]]);
+      facts(details, [['Home', place(household.homeLot)], ['Household funds', funds], ['Household type', household.isPlayer === true ? 'Player household' : household.isPlayer === false ? 'Other household' : 'Unknown'], ['Play history recorded', household.isUnplayed === true ? 'Unplayed' : household.isUnplayed === false ? 'Played' : 'Unknown']]);
       if (household.description) details.append(element('p', household.description, 'household-description'));
       const people = element('ul', undefined, 'member-list');
       for (const sim of household.members || []) people.append(element('li', member(sim)));
       details.append(people);
       if (!household.members?.length) details.append(element('p', 'Members unknown.', 'hint'));
-      households.append(details);
+      householdList.append(details);
     }
-  } else households.append(element('p', entry.households?.join(', ') || 'Household names unknown.'));
-  const allSims = element('details'); allSims.append(element('summary', 'All Sims recorded in this save'));
-  if (entry.simDetails?.length) {
-    const people = element('ul', undefined, 'member-list');
-    for (const sim of entry.simDetails) people.append(element('li', member(sim)));
-    allSims.append(people);
-  } else allSims.append(element('p', entry.sims?.join(', ') || 'Unknown'));
-  households.append(allSims);
+    const allSims = element('details'); allSims.append(element('summary', playerOnly.checked ? 'Sims in shown households' : 'All Sims recorded in this save'));
+    const sims = playerOnly.checked ? shown.flatMap(household => household.members || []) : entry.simDetails || [];
+    if (sims.length) {
+      const people = element('ul', undefined, 'member-list');
+      for (const sim of sims) people.append(element('li', member(sim)));
+      allSims.append(people);
+    } else allSims.append(element('p', playerOnly.checked ? 'No Sim names available for these households.' : entry.sims?.join(', ') || 'Unknown'));
+    householdList.append(allSims);
+  };
+  playerOnly.addEventListener('change', () => { householdViews.set(entry.hash, playerOnly.checked); drawHouseholds(); });
+  drawHouseholds();
   if (entry.metadataTruncated) households.append(element('p', 'This unusually large save reached the detail limit. Some households or Sims are not shown.', 'hint'));
   panel.append(households);
 
@@ -302,7 +386,7 @@ function renderLibrary(preserveDetail = false) {
     const row = element('button', undefined, 'save-row');
     row.setAttribute('aria-current', String(entry.id === selected[collection]));
     row.append(element('strong', entry.title));
-    row.append(element('span', collection === 'backups' ? `${plural(entry.count, 'save file')} · ${date(entry.when)}` : entry.activeHousehold?.name || entry.households?.slice(0, 2).join(', ') || 'Household unknown'));
+    row.append(element('span', collection === 'backups' ? `${plural(entry.count, 'save file')} · ${date(entry.when)}` : lotSummary(entry, true)));
     if (collection === 'imports') {
       const rollup = saveRollup(entry);
       const summary = element('span', rollup.text, 'save-rollup'); summary.title = rollup.detail;

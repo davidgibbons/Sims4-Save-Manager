@@ -8,6 +8,8 @@ const { Worker, isMainThread, parentPort, workerData } = require('node:worker_th
 const SAVE_NAME = /^Slot_([0-9a-f]{8})\.save(?:\.ver(\d+))?$/i;
 const ARCHIVE_SAVE = /\.save(?:\.ver(\d{1,3}))?$/i;
 const MAX_RESOURCE = 64 * 1024 * 1024;
+const MAX_PREVIEW = 2 * 1024 * 1024;
+const LOT_IMAGES = [0x10, 0x0f];
 const LIFE_STAGES = { 1: 'Newborn', 2: 'Toddler', 4: 'Child', 8: 'Teen', 16: 'Young adult', 32: 'Adult', 64: 'Elder', 128: 'Infant' };
 // Pack IDs are recorded requirements, not proof that a pack is installed.
 const PACK_NAMES = {
@@ -85,6 +87,7 @@ function text(map, number) {
 }
 
 const scalar = (map, number) => typeof map.get(number)?.[0] === 'bigint' ? map.get(number)[0].toString() : null;
+const boolean = (map, number) => { const value = scalar(map, number); return value === '1' ? true : value === '0' ? false : null; };
 const identifier = (map, number) => { const value = scalar(map, number); return value === '0' ? null : value; };
 const messages = (map, number) => (map.get(number) || []).filter(Buffer.isBuffer);
 
@@ -110,7 +113,7 @@ function metadata(resource) {
   const householdDetails = householdRecords.slice(0, 1000).map(item => {
     const value = fields(item);
     const id = identifier(value, 2);
-    return { id, name: text(value, 3), description: text(value, 18), funds: scalar(value, 5), homeLotId: identifier(value, 4), homeLot: zones.get(identifier(value, 4)) || null, lastPlayedSimId: identifier(value, 9), members: id ? people.filter(sim => sim.householdId === id) : [] };
+    return { id, name: text(value, 3), description: text(value, 18), funds: scalar(value, 5), isPlayer: boolean(value, 31), isUnplayed: boolean(value, 14), homeLotId: identifier(value, 4), homeLot: zones.get(identifier(value, 4)) || null, lastPlayedSimId: identifier(value, 9), members: id ? people.filter(sim => sim.householdId === id) : [] };
   });
   for (const lot of lots) lot.homeHouseholdIds = householdDetails.filter(household => lot.id && household.homeLotId === lot.id && household.id).map(household => household.id);
   const content = fields(messages(slot, 17)[0] || Buffer.alloc(0));
@@ -120,7 +123,7 @@ function metadata(resource) {
     else for (let offset = 0; offset < value.length;) { const item = integer(value, offset); packIds.push(item.value.toString()); offset = item.next; }
   }
   return {
-    metadataVersion: 2, saveName: text(slot, 9),
+    metadataVersion: 4, saveName: text(slot, 9),
     households: householdDetails.map(household => household.name).filter(Boolean), sims: people.map(sim => sim.name).filter(Boolean),
     householdCount: householdRecords.length, simCount: simRecords.length, householdDetails, simDetails: people,
     activeHousehold: householdDetails.find(household => household.id && household.id === identifier(slot, 11)) || null,
@@ -132,7 +135,7 @@ function metadata(resource) {
   };
 }
 
-function parseMetadata(input) {
+function packageResources(input) {
   const buffer = Buffer.from(input);
   if (buffer.length < 96 || buffer.toString('ascii', 0, 4) !== 'DBPF') throw new Error('Not a recognized DBPF save.');
   if (buffer.readUInt32LE(4) !== 2 || buffer.readUInt32LE(8) !== 1) throw new Error('Unsupported DBPF version.');
@@ -144,11 +147,12 @@ function parseMetadata(input) {
   const flags = word();
   if (flags & ~7) throw new Error('Unsupported save index flags.');
   const shared = [1, 2, 4].map(bit => flags & bit ? word() : undefined);
+  const entries = [];
   for (let i = 0; i < count; i++) {
     const type = shared[0] ?? word();
     if (shared[1] === undefined) word();
-    if (shared[2] === undefined) word();
-    word();
+    const high = shared[2] ?? word();
+    const low = word();
     const start = word();
     const packedSize = word();
     const size = packedSize & 0x7fffffff;
@@ -157,29 +161,120 @@ function parseMetadata(input) {
     if (packedSize >>> 31) { compression = buffer.readUInt16LE(cursor); cursor += 2; }
     cursor += 2;
     if (cursor > buffer.length || start + size > buffer.length) throw new Error('Truncated save resource.');
-    if (type !== 13) continue;
-    if (expected > MAX_RESOURCE || size > MAX_RESOURCE) throw new Error('Save metadata exceeds the inspection limit.');
-    let resource = buffer.subarray(start, start + size);
-    if (compression === 0x5a42) resource = inflateSync(resource, { maxOutputLength: MAX_RESOURCE });
-    else if (compression === 0xffff) {
-      if (resource.length < 5 || resource.readUIntBE(2, 3) > MAX_RESOURCE) throw new Error('Invalid compressed save size.');
-      resource = require('@s4tk/compression').decompressBuffer(resource, compression);
-    } else if (compression !== 0) throw new Error('Unsupported save compression.');
-    if (resource.length !== expected) throw new Error('Save resource size does not match its index.');
-    return metadata(resource);
+    entries.push({ type, id: ((BigInt(high) << 32n) | BigInt(low)).toString(), start, size, expected, compression });
   }
-  throw new Error('No supported save-game resource found.');
+  return { buffer, entries };
+}
+
+function resourceBytes(buffer, entry, limit = MAX_RESOURCE) {
+  const { start, size, expected, compression } = entry;
+  if (expected > limit || size > limit) throw new Error('Save resource exceeds the inspection limit.');
+  let resource = buffer.subarray(start, start + size);
+  if (compression === 0x5a42) resource = inflateSync(resource, { maxOutputLength: limit });
+  else if (compression === 0xffff) {
+    if (resource.length < 5 || resource.readUIntBE(2, 3) > limit) throw new Error('Invalid compressed save size.');
+    resource = require('@s4tk/compression').decompressBuffer(resource, compression);
+  } else if (compression !== 0) throw new Error('Unsupported save compression.');
+  if (resource.length !== expected) throw new Error('Save resource size does not match its index.');
+  return resource;
+}
+
+function parseMetadata(input) {
+  const { buffer, entries } = packageResources(input);
+  const save = entries.find(entry => entry.type === 13);
+  if (!save) throw new Error('No supported save-game resource found.');
+  const result = metadata(resourceBytes(buffer, save));
+  const buildings = new Map();
+  const previews = new Set(entries.filter(entry => LOT_IMAGES.includes(entry.type)).map(entry => entry.id));
+  for (const entry of entries) if (entry.type === 6) {
+    if (!buildings.has(entry.id)) buildings.set(entry.id, []);
+    buildings.get(entry.id).push(entry);
+  }
+  for (const lot of result.lots) {
+    lot.modification = 'unknown';
+    lot.hasPreview = !!lot.id && previews.has(lot.id);
+    const matches = buildings.get(lot.id) || [];
+    if (matches.length !== 1) continue;
+    try {
+      const building = fields(resourceBytes(buffer, matches[0]));
+      if (identifier(building, 1) !== lot.id) continue;
+      const flag = scalar(building, 6);
+      lot.modification = flag === '1' ? 'modified' : flag === '0' ? 'unmodified' : 'unknown';
+    } catch { /* An unreadable building must not hide otherwise usable lot details. */ }
+  }
+  return result;
+}
+
+function previewImage(bytes) {
+  if (bytes.length < 4 || bytes.readUInt16BE(0) !== 0xffd8 || bytes.readUInt16BE(bytes.length - 2) !== 0xffd9) throw new Error('Saved preview is not a supported JPEG.');
+  let offset = 2;
+  let width, height, alpha;
+  while (offset + 4 <= bytes.length) {
+    if (bytes[offset] !== 0xff) throw new Error('Invalid saved preview marker.');
+    const marker = bytes[offset + 1];
+    if (marker === 0xda || marker === 0xd9) break;
+    const length = bytes.readUInt16BE(offset + 2);
+    if (length < 2 || offset + 2 + length > bytes.length) throw new Error('Truncated saved preview.');
+    const segment = bytes.subarray(offset + 4, offset + 2 + length);
+    if ([0xc0, 0xc1, 0xc2].includes(marker)) {
+      if (segment.length < 6 || width !== undefined) throw new Error('Invalid preview dimensions.');
+      height = segment.readUInt16BE(1); width = segment.readUInt16BE(3);
+    }
+    if (marker === 0xe0 && segment.toString('ascii', 0, 4) === 'ALFA') {
+      if (segment.length < 8) throw new Error('Invalid preview transparency.');
+      const size = segment.readUInt32BE(4);
+      if (size > segment.length - 8 || size < 33) throw new Error('Truncated preview transparency.');
+      alpha = segment.subarray(8, 8 + size);
+    }
+    offset += length + 2;
+  }
+  if (!width || !height || width > 2048 || height > 2048) throw new Error('Preview dimensions exceed the display limit.');
+  if (alpha) {
+    if (!alpha.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) || alpha.readUInt32BE(8) !== 13 || alpha.toString('ascii', 12, 16) !== 'IHDR' || alpha.readUInt32BE(16) !== width || alpha.readUInt32BE(20) !== height || alpha[24] !== 8 || alpha[25] !== 0) throw new Error('Preview transparency does not match its image.');
+    let cursor = 8, pixels = false, complete = false;
+    while (cursor + 12 <= alpha.length) {
+      const length = alpha.readUInt32BE(cursor); const type = alpha.toString('ascii', cursor + 4, cursor + 8);
+      if (length > alpha.length - cursor - 12 || ['acTL', 'fcTL', 'fdAT'].includes(type)) throw new Error('Unsupported preview transparency.');
+      if (type === 'IDAT') pixels = true;
+      cursor += length + 12;
+      if (type === 'IEND') { complete = length === 0 && cursor === alpha.length; break; }
+    }
+    if (!pixels || !complete) throw new Error('Truncated preview transparency.');
+  }
+  return { image: `data:image/jpeg;base64,${bytes.toString('base64')}`, mask: alpha ? `data:image/png;base64,${alpha.toString('base64')}` : null, width, height };
+}
+
+function parseLotPreview(input, lotId) {
+  const { buffer, entries } = packageResources(input);
+  let failure;
+  for (const type of LOT_IMAGES) for (const entry of entries) {
+    if (entry.type !== type || entry.id !== lotId) continue;
+    try { return previewImage(resourceBytes(buffer, entry, MAX_PREVIEW)); }
+    catch (error) { failure = error; }
+  }
+  if (failure) throw failure;
+  return null;
 }
 
 // A worker deadline contains malformed legacy compression without freezing the UI.
-function readMetadata(buffer) {
+function readMetadata(buffer, lotId) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(__filename, { workerData: buffer, resourceLimits: { maxOldGenerationSizeMb: 128 } });
+    const worker = new Worker(__filename, { workerData: { buffer, lotId }, resourceLimits: { maxOldGenerationSizeMb: 128 } });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('Save inspection timed out.')); }, 3000);
     worker.once('message', result => { clearTimeout(timeout); worker.terminate(); result.error ? reject(new Error(result.error)) : resolve(result.value); });
     worker.once('error', error => { clearTimeout(timeout); reject(error); });
     worker.once('exit', code => { clearTimeout(timeout); if (code !== 0) reject(new Error('Save inspection stopped.')); });
   });
+}
+
+async function readLotPreview(file, lotId, expectedHash) {
+  if (typeof lotId !== 'string' || !/^[1-9]\d{0,19}$/.test(lotId) || BigInt(lotId) > 0xffffffffffffffffn) throw new Error('Select a valid lot first.');
+  const stat = await fs.lstat(file);
+  if (!stat.isFile() || !stat.size || stat.size > 128 * 1024 * 1024) throw new Error('The stored save cannot be inspected for previews.');
+  if (await digest(file) !== expectedHash) throw new Error('The stored save changed. Its preview was not loaded.');
+  const buffer = await fs.readFile(file);
+  if (createHash('sha256').update(buffer).digest('hex') !== expectedHash || await digest(file) !== expectedHash) throw new Error('The stored save changed. Its preview was not loaded.');
+  return readMetadata(buffer, lotId);
 }
 
 async function inspectSave(file) {
@@ -201,7 +296,7 @@ async function inspectSave(file) {
 }
 
 if (!isMainThread) {
-  try { parentPort.postMessage({ value: parseMetadata(workerData) }); }
+  try { parentPort.postMessage({ value: workerData.lotId ? parseLotPreview(workerData.buffer, workerData.lotId) : parseMetadata(workerData.buffer) }); }
   catch (error) { parentPort.postMessage({ error: error.message }); }
 }
-module.exports = { SAVE_NAME, ARCHIVE_SAVE, digest, parseMetadata, inspectSave };
+module.exports = { SAVE_NAME, ARCHIVE_SAVE, digest, parseMetadata, inspectSave, readLotPreview };

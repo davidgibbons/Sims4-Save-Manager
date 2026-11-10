@@ -1,7 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { ARCHIVE_SAVE, inspectSave, digest } = require('./save-inspector');
+const { ARCHIVE_SAVE, inspectSave, digest, readLotPreview } = require('./save-inspector');
 const manager = require('./save-manager');
 
 function createArchive({ file, getConfig, assertGameClosed, validateDestination }) {
@@ -68,6 +68,11 @@ function createArchive({ file, getConfig, assertGameClosed, validateDestination 
     const { file: storedFile, name, slot, recoveryVersion, size, modified, hash, ...details } = inspected;
     await persist({ ...data, imports: data.imports.map(item => item.id === id ? { ...item, ...details } : item) });
     return state();
+  }
+  async function lotPreview(id, lotId) {
+    const entry = typeof id === 'string' && data.imports.find(item => item.id === id);
+    if (!entry || typeof lotId !== 'string' || !Array.isArray(entry.lots) || !entry.lots.some(lot => lot.id === lotId)) throw new Error('Refresh the imported save and select a recorded lot first.');
+    return readLotPreview(entry.file, lotId, entry.hash);
   }
   async function trySave(id) {
     await assertGameClosed();
@@ -172,6 +177,6 @@ function createArchive({ file, getConfig, assertGameClosed, validateDestination 
     await persist({ ...data, session: null });
     return state();
   }
-  return { load, scan, state, annotate, refreshDetails, trySave, returnToPrevious, importSaves, keepTrial };
+  return { load, scan, state, annotate, refreshDetails, lotPreview, trySave, returnToPrevious, importSaves, keepTrial };
 }
 module.exports = { createArchive };

@@ -203,6 +203,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     handle('annotate-save', async (id, annotation) => { await archive.annotate(id, annotation); return state(); });
     handle('refresh-save-details', async id => { await archive.refreshDetails(id); return state(); });
+    handle('lot-preview', (id, lotId) => archive.lotPreview(id, lotId));
     handle('try-save', async id => {
       if (!await confirmSwap('Try this save in The Sims 4?')) return { canceled: true };
       await archive.trySave(id);
