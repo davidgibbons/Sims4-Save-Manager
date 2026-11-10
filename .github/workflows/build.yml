@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to rebuild into an unsigned draft (leave empty for a test build)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -38,8 +43,11 @@ jobs:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      RELEASE_TAG: ${{ needs.release-please.outputs.tag_name || (github.ref_type == 'tag' && github.ref_name) || '' }}
+      RELEASE_TAG: ${{ inputs.release_tag || needs.release-please.outputs.tag_name || (github.ref_type == 'tag' && github.ref_name) || '' }}
     steps:
+      - name: Validate release tag
+        if: env.RELEASE_TAG != ''
+        run: node -e "if (!/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(process.env.RELEASE_TAG)) throw new Error('Invalid version tag')"
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG || github.ref }}
@@ -52,33 +60,15 @@ jobs:
       - name: Check release tag matches app version
         if: env.RELEASE_TAG != ''
         run: node -e "if (process.env.RELEASE_TAG !== 'v' + require('./package.json').version) throw new Error('Tag must match package.json version')"
-      - name: Check Mac release signing and notarization credentials
-        if: env.RELEASE_TAG != '' && runner.os == 'macOS'
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: node -e "for (const name of ['CSC_LINK', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) if (!process.env[name]) throw new Error('Missing release credential ' + name)"
-      - name: Build macOS app and updates
+      - name: Build unsigned macOS app
         if: runner.os == 'macOS'
-        run: |
-          if [ -z "$CSC_LINK" ]; then unset CSC_LINK; fi
-          npm run dist:mac -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
+        run: npm run dist:mac -- -c.forceCodeSigning=false -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          CSC_LINK: ${{ env.RELEASE_TAG != '' && secrets.MAC_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
-          APPLE_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_ID || '' }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_TEAM_ID || '' }}
-      - name: Build Windows installer and updates
+      - name: Build unsigned Windows installer
         if: runner.os == 'Windows'
         shell: bash
-        run: npm run dist:win -- -c.forceCodeSigning=${{ env.RELEASE_TAG != '' }}
-        env:
-          CSC_LINK: ${{ env.RELEASE_TAG != '' && secrets.WIN_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+        run: npm run dist:win -- -c.forceCodeSigning=false
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}
@@ -91,7 +81,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: ${{ always() && needs.build.result == 'success' && (github.ref_type == 'tag' || needs.release-please.outputs.release_created == 'true') }}
+    if: ${{ always() && needs.build.result == 'success' && (github.ref_type == 'tag' || needs.release-please.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')) }}
     needs: [release-please, build]
     runs-on: ubuntu-latest
     permissions:
@@ -106,11 +96,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || needs.release-please.outputs.tag_name || github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true || { echo "Refusing to change a published release"; exit 1; }
           else
             gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes
           fi
+          gh release edit "$RELEASE_TAG" --prerelease --latest=false --title "$RELEASE_TAG — unsigned preview"
           gh release upload "$RELEASE_TAG" release/* --clobber

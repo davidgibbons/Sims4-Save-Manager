@@ -59,7 +59,7 @@ Automatic protection rejects known cloud-sync destinations (OneDrive, iCloud Dri
 
 Keep enough free space for the snapshots. An external-drive copy is still useful for disk failure: local snapshots protect captured versions from cloud-sync mistakes, not a failed computer or files lost before the first backup.
 
-Installers are produced by the **Build desktop installers** GitHub Actions workflow. End users do not need Node.js or Python. Local test builds are unsigned and unnotarized, so Windows SmartScreen or macOS Gatekeeper may warn or block installation; release builds require signing credentials.
+Installers are produced by the **Build desktop installers** GitHub Actions workflow. End users do not need Node.js or Python. Current builds are unsigned and unnotarized previews. Windows SmartScreen or macOS Gatekeeper may warn or block installation. Mac apps use a local ad-hoc signature for Apple Silicon compatibility; it does not establish a verified publisher. No paid signing credentials are required for these previews.
 
 ## In-app updates
 
@@ -105,24 +105,14 @@ Ordinary pushes do not publish releases. Use `feat:`, `fix:`, and other Conventi
 
 The release-please job uses the repository's `GITHUB_TOKEN` by default. Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. An optional `RELEASE_PLEASE_TOKEN` secret can supply a fine-grained token with repository contents, issues, and pull-request write access if CI must start automatically on the bot-created release PR. With the default token, GitHub suppresses those PR-triggered runs; run **Build desktop installers → Run workflow** against the release PR branch before merging it. Release builds are invoked directly in the same workflow, so they do not depend on bot-created tags triggering another run. See the [release-please token documentation](https://github.com/googleapis/release-please-action#other-actions-on-release-please-prs).
 
-Configure these GitHub Actions repository secrets before merging a release PR or tagging a release:
+Current releases are **unsigned previews**. The workflow applies an ad-hoc Mac signature without hardened runtime or notarization, and builds Windows installers without a publisher certificate. No signing secrets are read by these builds. Reintroducing trusted signing later requires Apple Developer ID/notarization and a Windows signing provider, plus update verification on both platforms.
 
-| Secret | Value |
-| --- | --- |
-| `MAC_CSC_LINK` | Base64-encoded Developer ID Application certificate exported as a `.p12` |
-| `MAC_CSC_KEY_PASSWORD` | Password for that certificate |
-| `APPLE_ID` | Apple Developer account email |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password used for notarization |
-| `APPLE_TEAM_ID` | Apple Developer team ID |
-| `WIN_CSC_LINK` | Base64-encoded Windows code-signing certificate exported as a `.p12` |
-| `WIN_CSC_KEY_PASSWORD` | Password for that certificate |
+1. Review the release-please PR's proposed version and changelog and validate that branch.
+2. Merge the release PR. CI checks the generated tag matches the app version and uploads installers, Mac ZIPs, blockmaps, and `latest*.yml` metadata to an unpublished preview draft.
+3. Review the completed draft, add installation notes, and publish it as a **prerelease**, keeping it out of the stable update feed. Publish only after both platform builds pass. The workflow refuses to overwrite a published release.
+4. For an existing unpublished tag, run **Build desktop installers → Run workflow** on `main`, setting **release_tag** to the existing tag (for example, `v3.3.0`). The workflow builds the tagged source with the current unsigned packaging settings and updates only its draft. Leaving the field empty produces test artifacts only. Do not move or recreate the version tag.
 
-Tagged builds require code signing on both platforms and notarization credentials on Mac. No signing certificate or GitHub token is shipped in the app. CI uses its temporary GitHub token only in the draft-release job. Signing and notarization secrets are passed only to release builds, never to pull-request or branch builds. Keep the Mac signing team and Windows publisher consistent across releases; changing signing identity can prevent installed apps from accepting updates.
-
-1. Review the release-please PR's proposed version and changelog, validate that branch, and confirm signing credentials are configured. Leave the PR open until you want to prepare a release.
-2. Merge the release PR. CI checks the generated tag matches the app version, signs the builds, notarizes the Mac app, and uploads installers, Mac update ZIPs, blockmaps, and `latest*.yml` metadata to the draft release. A failed build leaves the draft unpublished; rerun the failed jobs after fixing the cause.
-3. Review the completed draft and publish it as a stable release when ready. Publish only after both platform builds have completed. The workflow refuses to overwrite a published release. Installed apps only see the update after publication.
-4. Test upgrading a previous signed version on both operating systems. Check that the installed version changes and settings and save folders are preserved. For a manual release, update `package.json` and `package-lock.json`, commit them, and push a matching `v<version>` tag instead.
+On macOS, move the app to Applications and try opening it. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway** for the downloaded app. On Windows, SmartScreen may offer **More info → Run anyway**. Only proceed for an installer you obtained from this repository. Managed devices may prevent these overrides. These previews require manual installation and upgrades; the app excludes prereleases from update checks, and unsigned Mac apps cannot complete in-app updates.
 
 Keep the generated update filenames and metadata together; do not hand-edit checksums or omit the Mac ZIP files. The updater verifies download checksums and uses the platform's signing checks. End-to-end update installation requires two signed versions and a published release; unit tests use a simulated update provider and never install software.
 
