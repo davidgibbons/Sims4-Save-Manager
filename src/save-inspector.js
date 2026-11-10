@@ -271,9 +271,8 @@ async function readLotPreview(file, lotId, expectedHash) {
   if (typeof lotId !== 'string' || !/^[1-9]\d{0,19}$/.test(lotId) || BigInt(lotId) > 0xffffffffffffffffn) throw new Error('Select a valid lot first.');
   const stat = await fs.lstat(file);
   if (!stat.isFile() || !stat.size || stat.size > 128 * 1024 * 1024) throw new Error('The stored save cannot be inspected for previews.');
-  if (await digest(file) !== expectedHash) throw new Error('The stored save changed. Its preview was not loaded.');
   const buffer = await fs.readFile(file);
-  if (createHash('sha256').update(buffer).digest('hex') !== expectedHash || await digest(file) !== expectedHash) throw new Error('The stored save changed. Its preview was not loaded.');
+  if (createHash('sha256').update(buffer).digest('hex') !== expectedHash) throw new Error('The stored save changed. Its preview was not loaded.');
   return readMetadata(buffer, lotId);
 }
 
