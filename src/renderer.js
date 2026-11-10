@@ -133,7 +133,7 @@ function lotsSection(panel, entry) {
   lotViews.set(entry.hash, view);
   const modifiedCount = entry.metadataVersion >= 3 ? `${plural(lots.filter(lot => lot.modification === 'modified').length, 'lot')} modified` : 'Modified count unknown';
   const neighborhoods = new Set(lots.map(lot => lot.neighborhood).filter(Boolean)).size;
-  const browser = disclosure(`Browse all houses and lots · ${modifiedCount}, ${plural(entry.lotCount ?? lots.length, 'lot')} total, ${plural(neighborhoods, 'neighborhood')}`, 'lot-browser'); browser.open = view.open;
+  const browser = disclosure(`Browse all houses and lots · ${modifiedCount}, ${plural(entry.lotCount ?? lots.length, 'lot')}, ${plural(neighborhoods, 'neighborhood')}`, 'lot-browser'); browser.open = view.open;
   browser.addEventListener('toggle', () => { view.open = browser.open; });
   const filterLabel = element('label', 'Find a lot by name, neighborhood, or description'); filterLabel.htmlFor = 'lot-filter';
   const filter = element('input'); filter.id = 'lot-filter'; filter.type = 'search'; filter.value = view.filter;
