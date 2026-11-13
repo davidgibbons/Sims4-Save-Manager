@@ -104,7 +104,7 @@ function lotPreview(record, entry, lot) {
     if (!lot.hasPreview || requested) return;
     requested = true; retry.hidden = true; status.textContent = 'Loading saved preview…';
     try {
-      const preview = await invoke(window.saves.lotPreview(entry.id, lot.id));
+      const preview = await invoke(entry.kind === 'backup' ? window.saves.backupLotPreview(entry.id, lot.id) : window.saves.lotPreview(entry.id, lot.id));
       if (!preview) { status.textContent = 'No saved preview is stored for this lot.'; return; }
       const canvas = await previewCanvas(preview);
       if (!canvas) { status.textContent = 'No visible house preview was saved for this lot.'; return; }
@@ -232,21 +232,25 @@ function importedDetails(panel, entry) {
     ['Last-played location', place(entry.lastPlayedLocation)],
     ['Game version when saved', entry.gameVersion || 'Unknown'], ['Game version when created', entry.createdGameVersion || 'Unknown'],
     ['Internal save date', entry.recordedTimestamp ? 'Unknown · timestamp format not verified' : 'Unknown'],
-    ['Original file modified', date(entry.modified)], ['Imported', date(entry.importedAt)],
+    [entry.kind === 'backup' ? 'Save file modified' : 'Original file modified', date(entry.modified)],
+    entry.kind === 'backup' ? ['Backup set', backupTitle(entry)] : ['Imported', date(entry.importedAt)],
     ['File size', size(entry.size)], ['Save copy', entry.recoveryVersion == null ? 'Main save' : 'Earlier recovery version'],
-    ['Tried before', entry.annotation.tried ? 'Yes' : 'Not yet']
+    ...(entry.kind === 'backup' ? [] : [['Tried before', entry.annotation.tried ? 'Yes' : 'Not yet']])
   ]);
   save.append(element('h3', 'Packs recorded by this save'));
   save.append(element('p', entry.requiredPacks?.length ? entry.requiredPacks.map(pack => pack.name || `Unrecognized pack (ID ${pack.id})`).join(', ') : 'No pack requirements were recorded or could be read.'));
   save.append(element('p', 'This list doesn’t check which packs are installed or identify missing mods. File dates can reflect copying.', 'hint'));
   const refresh = element('button', 'Refresh details', 'text-button'); refresh.id = 'refresh-save-details';
   refresh.addEventListener('click', () => run('Reading details from the stored copy…', async () => {
-    const state = await invoke(window.saves.refreshSaveDetails(entry.id)); render(state);
-    if (selected.imports === entry.id && collection === 'imports') byId('recorded-save-details').open = true;
+    if (entry.kind === 'backup') {
+      try { await invoke(window.saves.refreshBackupDetails(entry.id)); }
+      finally { render(await invoke(window.saves.state())); }
+    } else render(await invoke(window.saves.refreshSaveDetails(entry.id)));
+    if (selected[collection] === entry.id) byId('recorded-save-details').open = true;
     return 'Save details refreshed. Your original file date, label, and notes were kept.';
   }));
   save.append(refresh); panel.append(save);
-  if ((entry.metadataVersion || 0) < 2) panel.append(element('p', 'More details may be available. Choose Refresh above to read the details of your imported saves.', 'hint'));
+  if ((entry.metadataVersion || 0) < 2) panel.append(element('p', 'More details may be available. Choose Refresh above to read the details of your saved games.', 'hint'));
 }
 
 function activateTab(name, focus = false) {
@@ -305,10 +309,26 @@ window.saves.onProtection(state => {
   if (!current) return;
   current.protection = state;
   renderHome();
-  byId('protection-status').textContent = state.message;
-  byId('last-success').textContent = state.lastSuccess ? `Last completed backup: ${date(state.lastSuccess)}` : 'No automatic backup has completed yet.';
+  renderProtection();
   if (state.lastSuccess && state.lastSuccess !== lastAutomaticBackup) { lastAutomaticBackup = state.lastSuccess; void refresh(true); }
 });
+
+function renderProtection() {
+  const state = current.protection;
+  let title = 'Starting automatic backups…';
+  let copy = 'Checking your save and backup locations. Keep this app running.';
+  if (!current.config.auto_backup) { title = 'Automatic backups are off'; copy = 'Turn them on to keep copies of your saved changes.'; }
+  else if (state.status === 'settling') { title = state.lastSuccess ? 'Waiting for saved changes to finish' : 'Preparing your first automatic backup'; copy = 'Waiting for about 10–15 seconds without file changes before copying. No new backup has completed yet.'; }
+  else if (state.status === 'backing-up') { title = 'Making an automatic backup…'; copy = 'Copying and verifying your saves. The completed copy will appear in Saved games → Backups.'; }
+  else if (state.status === 'watching') { title = 'Automatic backups are working'; copy = 'Checking for saved changes every 5 seconds. Unchanged files do not create more copies while this app stays running.'; }
+  else if (state.status === 'waiting') { title = 'Waiting for another save operation'; copy = 'Automatic backups will retry when the current operation finishes. Keep this app running.'; }
+  else if (state.status === 'error') { title = 'Automatic backup needs attention'; copy = 'A new backup could not be completed. Review Backup status details below. Earlier backups are kept.'; }
+  if (byId('automatic-status').textContent !== title) byId('automatic-status').textContent = title;
+  if (byId('automatic-progress').textContent !== copy) byId('automatic-progress').textContent = copy;
+  byId('protection-status').textContent = state.message;
+  byId('last-success').textContent = state.lastSuccess ? `Last completed automatic backup: ${date(state.lastSuccess)}` : 'No automatic backup has completed yet.';
+  byId('automatic-location').textContent = current.config.backup_folder ? `Copies saved to: ${current.config.backup_folder}` : 'Choose a Backup location above.';
+}
 
 function renderHome() {
   if (!current) return;
@@ -322,15 +342,16 @@ function renderHome() {
   else if (!current.saveStatus.count) { title = 'Ready for your first saved game'; copy = 'Make a save in The Sims 4, or import an older one to pick up where you left off.'; action = 'Browse saved games'; }
   else if (!current.config.auto_backup) { title = 'Automatic backups are off'; copy = 'You can back up now, or let this app keep copies as your saved game changes.'; action = 'Turn on automatic backups'; }
   else if (protection.status === 'error') { title = 'Your backups need attention'; copy = 'Your older backups are still available. Review the backup status in Settings.'; action = 'Review backup settings'; }
-  else if (protection.status === 'settling' || protection.status === 'backing-up' || !protection.lastSuccess) { title = protection.status === 'backing-up' ? 'Keeping a copy of your latest game…' : 'Waiting for your save to finish'; copy = 'The app waits for saved changes to settle before making a verified copy.'; action = 'View backup settings'; }
-  else { title = 'Your latest saved game is backed up'; copy = 'Automatic backups are on. Keep this app running while you play.'; action = 'View saved games'; }
+  else if (protection.status === 'waiting') { title = 'Automatic backup is waiting'; copy = 'Another save operation is running. Automatic backups will retry when it finishes.'; action = 'View backup settings'; }
+  else if (protection.status === 'settling' || protection.status === 'backing-up' || !protection.lastSuccess) { title = protection.status === 'backing-up' ? 'Making an automatic backup…' : protection.lastSuccess ? 'Waiting for saved changes to finish' : 'Preparing your first automatic backup'; copy = protection.status === 'backing-up' ? 'Copying and verifying your saves. Find the completed copy in Saved games → Backups.' : `${protection.lastSuccess ? 'A new' : 'The first'} copy starts after about 10–15 seconds without file changes. Keep this app running; closing its window is fine.`; action = 'View backup settings'; }
+  else { title = 'Automatic backups are working'; copy = 'Automatic backups are working. Closing the window keeps them running; choosing Quit stops them.'; action = 'View saved games'; }
   byId('game-status-title').textContent = title;
   byId('game-status-copy').textContent = copy;
   byId('home-next').textContent = action;
   byId('game-last-backup').textContent = protection.lastSuccess ? `Last automatic backup · ${date(protection.lastSuccess)}` : `${plural(current.saveStatus.count || 0, 'save file')} found · ${plural(current.backups.length, 'backup')} available`;
   byId('manual-help').textContent = !locationsReady() ? 'Set up your locations in Settings before making a backup.' : !current.saveStatus.count ? 'A game save needs to exist before it can be backed up.' : 'Your current saves stay in place. The copy goes to your Backup location.';
   const attention = !connected || !!current.backupWarning || protection.status === 'error';
-  byId('header-status').textContent = attention ? 'Setup or backup needs attention' : current.config.auto_backup ? 'Automatic backups on' : 'Automatic backups off';
+  byId('header-status').textContent = attention ? 'Setup or backup needs attention' : !current.config.auto_backup ? 'Automatic backups off' : protection.status === 'watching' ? 'Automatic backups working' : protection.status === 'backing-up' ? 'Making a backup…' : protection.status === 'waiting' ? 'Automatic backup waiting' : 'Automatic backup preparing';
   byId('header-status').classList.toggle('attention', attention);
 }
 
@@ -349,9 +370,9 @@ function render(state, preserveDetail = false) {
   byId('save-location-status').textContent = state.saveStatus.available ? `${plural(state.saveStatus.count, 'save file')} found. ${session ? 'Finish this trial before changing locations.' : ''}` : 'This location is not connected. Use Find my saves or choose a folder.';
   byId('auto-backup').checked = !!state.config.auto_backup;
   byId('start-login').checked = !!state.config.start_at_login;
-  byId('login-help').textContent = state.canStartAtLogin ? 'With automatic backups on, closing the window leaves the app in the tray or menu bar. Quit there to stop it. Your system may ask you to approve starting at login.' : 'Start at sign-in is available in the installed app. Closing the window keeps automatic backups running in the tray or menu bar.';
-  byId('protection-status').textContent = state.protection.message;
-  byId('last-success').textContent = state.protection.lastSuccess ? `Last completed backup: ${date(state.protection.lastSuccess)}` : 'No automatic backup has completed yet.';
+  byId('login-help').textContent = state.canStartAtLogin ? 'Optional: opens this app after you sign in, so backups can resume. Without it, open the app yourself. Your system may ask you to approve this login item.' : 'Start at sign-in is available in an installed build. In this local version, open the app yourself to start automatic backups.';
+  renderProtection();
+
   byId('candidates').replaceChildren();
   state.candidates.forEach((candidate, index) => {
     if (!showCandidates) return;
@@ -367,35 +388,44 @@ function render(state, preserveDetail = false) {
 }
 
 function libraryItems() {
-  return collection === 'backups' ? current.backups.map(entry => ({ ...entry, kind: 'backup', id: entry.name, title: backupTitle(entry), when: backupDate(entry.name) })) : current.archive.imports.map(entry => ({ ...entry, title: importedTitle(entry), when: entry.modified }));
+  return collection === 'backups' ? (current.backupSaves || []).map(entry => ({ ...entry, title: entry.saveName || entry.name, when: backupDate(entry.backupName) })) : current.archive.imports.map(entry => ({ ...entry, title: importedTitle(entry), when: entry.modified }));
 }
 function renderLibrary(preserveDetail = false) {
   if (!current) return;
-  byId('backup-count').textContent = current.backups.length;
+  byId('backup-count').textContent = current.backupSaves?.length ?? 0;
   byId('import-count').textContent = current.archive.imports.length;
   for (const key of ['backups', 'imports']) byId(`filter-${key}`).setAttribute('aria-pressed', String(key === collection));
-  byId('library-context').textContent = collection === 'backups' ? 'Backups contain the game’s save files at that moment. Restoring one replaces the current set.' : 'Imported saves are copies kept by this app. Try one, then return to your game or keep it.';
+  byId('library-context').textContent = collection === 'backups' ? 'Each tile is one save from a backup. Restoring replaces the whole backup set, including its other save files.' : 'Imported saves are copies kept by this app. Try one, then return to your game or keep it.';
   if (collection === 'backups' && current.warning) byId('library-context').textContent = 'Your backups couldn’t be read. Check the Backup location in Settings, then refresh.';
   const query = byId('library-search').value.trim();
-  const scope = collection === 'imports' ? byId('library-search-scope').value : 'people';
-  byId('search-scope').hidden = collection !== 'imports';
-  byId('library-search').placeholder = scope === 'lots' ? 'Search a house, lot, or neighborhood' : collection === 'imports' ? 'Search a family, Sim, or note' : 'Search a note or date';
+  const scope = byId('library-search-scope').value;
+  byId('search-scope').hidden = false;
+  byId('library-search').placeholder = scope === 'lots' ? 'Search a house, lot, or neighborhood' : 'Search a family, Sim, note, or checksum';
   const items = libraryItems().map(entry => ({ ...entry, match: search.matchSave(entry, query, scope, date(entry.when)) })).filter(entry => entry.match);
   if (!items.some(entry => entry.id === selected[collection])) selected[collection] = items[0]?.id || null;
   byId('saved-list').replaceChildren();
   byId('library-empty').hidden = items.length > 0;
-  byId('library-empty').textContent = query ? scope === 'lots' ? 'No houses or lots match your search. Choose Refresh to read lots from saves imported earlier.' : 'No saved games match your search. Try a family name, a date, or a note.' : collection === 'backups' ? 'Your backups will appear here. Make your first one from My game.' : 'Bring in saves from another folder or drive with Import saves. Originals stay where they are.';
+  byId('library-empty').textContent = query ? scope === 'lots' ? 'No houses or lots match your search. Choose Refresh to read houses and checksums from your saved games.' : 'No saved games match your search. Try a family name, a date, or a note.' : collection === 'backups' ? 'Your backups will appear here. Make your first one from My game.' : 'Bring in saves from another folder or drive with Import saves. Originals stay where they are.';
   if (collection === 'backups' && current.warning) byId('library-empty').textContent = 'Backups are unavailable until this location can be read.';
+  const copies = search.duplicateCounts([...(current.backupSaves || []), ...current.archive.imports]);
   for (const entry of items) {
     const row = element('button', undefined, 'save-row');
     row.setAttribute('aria-current', String(entry.id === selected[collection]));
     row.append(element('strong', entry.title));
-    row.append(element('span', collection === 'backups' ? `${plural(entry.count, 'save file')} · ${date(entry.when)}` : lotSummary(entry)));
-    if (collection === 'imports') {
+    row.append(element('span', entry.inspectable === false ? 'No game metadata available for this file' : lotSummary(entry)));
+    if (entry.hash) {
       const rollup = saveRollup(entry);
       const summary = element('span', rollup.text, 'save-rollup'); summary.title = rollup.detail;
-      row.append(summary, element('span', `${day(entry.modified)} · ${size(entry.size)}${entry.annotation.tried ? ' · Tried' : ''}`));
+      row.append(summary, element('span', `${day(entry.modified)} · ${size(entry.size)}${entry.annotation?.tried ? ' · Tried' : ''}`));
     }
+    if (entry.kind === 'backup') row.append(element('span', `${backupTitle(entry)} · ${date(entry.when)} · ${entry.name}`));
+    if (entry.hash) {
+      const checksum = element('span', `SHA-256 · ${entry.hash.slice(0, 12)}`, 'save-checksum');
+      checksum.title = `SHA-256: ${entry.hash}`; checksum.setAttribute('aria-label', checksum.title);
+      row.append(checksum);
+      if (copies.get(entry.hash) > 1) row.append(element('span', `Identical save · ${copies.get(entry.hash)} copies`, 'save-match'));
+    } else if (entry.detailsError) row.append(element('span', `Details unavailable: ${entry.detailsError} · Choose Refresh to try again`));
+    else if (entry.inspectable) row.append(element('span', 'Houses and checksum not read yet · Refresh to load'));
     if (entry.match.hint) row.append(element('span', entry.match.hint, 'save-match'));
     row.addEventListener('click', () => { selected[collection] = entry.id; renderLibrary(); byId('save-details').focus({ preventScroll: true }); });
     const li = element('li'); li.append(row); byId('saved-list').append(li);
@@ -415,8 +445,8 @@ function renderDetail(entry) {
     panel.append(empty); return;
   }
   panel.append(element('p', kind === 'backups' ? 'GAME BACKUP' : 'IMPORTED SAVE', 'eyebrow'), element('h2', entry.title), element('p', kind === 'backups' ? `Backed up ${date(entry.when)}` : `Original file modified ${date(entry.modified)}`, 'detail-meta'));
+  if (kind === 'imports' || entry.inspectable) importedDetails(panel, entry);
   if (kind === 'imports') {
-    importedDetails(panel, entry);
     const draft = drafts.get(entry.hash) || { label: entry.annotation.label || '', notes: entry.annotation.notes || '', tried: !!entry.annotation.tried };
     const label = element('label', 'Your name for this save'); label.htmlFor = 'detail-label';
     const nameInput = element('input'); nameInput.id = 'detail-label'; nameInput.maxLength = 200; nameInput.value = draft.label; nameInput.placeholder = 'For example, Wedding save';
@@ -437,11 +467,11 @@ function renderDetail(entry) {
     if (entry.annotation.notes) panel.append(element('p', entry.annotation.notes, 'saved-note'));
     panel.append(editor);
   } else {
-    panel.append(element('p', `This backup contains ${plural(entry.count, 'save file')}. Your current game is copied to backups before this set is restored.`));
+    panel.append(element('p', `This save belongs to ${backupTitle(entry)} (${date(entry.when)}). Restoring replaces all ${plural(entry.count, 'file')} in that backup, not just this save. Your current game is copied to backups before this set is restored.`));
   }
-  const action = element('button', kind === 'backups' ? 'Restore this backup' : 'Try this save', 'primary detail-action'); action.id = 'detail-action';
+  const action = element('button', kind === 'backups' ? 'Restore entire backup' : 'Try this save', 'primary detail-action'); action.id = 'detail-action';
   action.addEventListener('click', () => run(kind === 'backups' ? 'Keeping your current game and restoring the backup…' : 'Keeping your current game and preparing this save…', async () => {
-    const result = await invoke(kind === 'backups' ? window.saves.restore(entry.name) : window.saves.trySave(entry.id));
+    const result = await invoke(kind === 'backups' ? window.saves.restore(entry.backupName) : window.saves.trySave(entry.id));
     if (result.canceled) return 'No save files were changed.';
     if (kind === 'imports' && drafts.has(entry.hash)) drafts.set(entry.hash, { ...drafts.get(entry.hash), tried: true });
     render(result);
@@ -451,7 +481,7 @@ function renderDetail(entry) {
   actionArea.append(action, element('p', !locationsReady() ? 'Connect your Save location and Backup location in Settings before switching games.' : kind === 'backups' && current.archive.session ? 'Return to your game or choose Keep this save before restoring another backup.' : 'Close The Sims 4 before switching saved games.', 'hint'));
   panel.insertBefore(actionArea, panel.children[3] || null);
   const details = element('details'); details.append(element('summary', 'Technical details'));
-  details.append(element('p', kind === 'backups' ? `Backup folder: ${entry.name}` : `Original file: ${entry.originalFile || entry.file}\nStored copy: ${entry.file}\n${entry.detail}\nFile dates can reflect copying. Names can include NPCs.\nHouseholds recorded: ${(entry.households || []).join(', ') || 'Unknown'}\nSims recorded: ${(entry.sims || []).join(', ') || 'Unknown'}\nSlot: ${entry.slot || 'Unknown'}\nRecovery version: ${entry.recoveryVersion ?? 'Main save'}\nSHA-256: ${entry.hash}`, 'technical'));
+  details.append(element('p', kind === 'backups' ? `Backup folder: ${entry.backupName}\nSave file: ${entry.name}\nSHA-256: ${entry.hash || "Not read yet"}` : `Original file: ${entry.originalFile || entry.file}\nStored copy: ${entry.file}\n${entry.detail}\nFile dates can reflect copying. Names can include NPCs.\nHouseholds recorded: ${(entry.households || []).join(', ') || 'Unknown'}\nSims recorded: ${(entry.sims || []).join(', ') || 'Unknown'}\nSlot: ${entry.slot || 'Unknown'}\nRecovery version: ${entry.recoveryVersion ?? 'Main save'}\nSHA-256: ${entry.hash}`, 'technical'));
   if (kind === 'imports') details.append(element('pre', JSON.stringify({ recordedTimestamp: entry.recordedTimestamp ?? null, activeHouseholdId: entry.activeHouseholdId ?? null, lastPlayedLocationId: entry.lastPlayedLocationId ?? null, lastPlayedLocation: entry.lastPlayedLocation ?? null, requiredPacks: entry.requiredPacks ?? null, householdDetails: entry.householdDetails ?? null, simDetails: entry.simDetails ?? null }, null, 2), 'technical'));
   panel.append(details);
 }
@@ -489,29 +519,32 @@ async function run(message, action) {
     if (byId('import-dialog').open) byId('import-error').textContent = message;
   } finally { working = false; byId('busy-progress').hidden = true; buttons(); }
 }
-async function refresh(quiet = false) {
+async function refresh(quiet = false, onlyMissing = false) {
   if (quiet) {
-    try { render(await invoke(window.saves.state()), true); } catch { /* The visible action reports its own errors. */ }
+    try { render(await invoke(window.saves.state()), true);
+      if (!working && activeTab === 'library' && collection === 'backups' && current.backupSaves?.some(entry => entry.inspectable && !entry.hash && !entry.detailsError)) void refresh(false, true);
+    } catch { /* The visible action reports its own errors. */ }
   } else {
-    const readDetails = collection === 'imports';
+    const readBackups = collection === 'backups';
     await run('Refreshing saved games…', async () => {
       let state = await invoke(window.saves.state());
-      const entries = readDetails ? state.archive.imports : [];
+      const entries = readBackups ? state.backupSaves.filter(entry => entry.inspectable && (!onlyMissing || (!entry.hash && !entry.detailsError))) : state.archive.imports;
       const failures = [];
       for (const [index, entry] of entries.entries()) {
         feedback(`Refreshing save details ${index + 1} of ${entries.length}…`);
-        try { state = await invoke(window.saves.refreshSaveDetails(entry.id)); }
+        try { if (readBackups) await invoke(window.saves.refreshBackupDetails(entry.id)); else state = await invoke(window.saves.refreshSaveDetails(entry.id)); }
         catch (error) { failures.push(`${importedTitle(entry)}: ${error.message}`); }
       }
+      if (readBackups && entries.length) state = await invoke(window.saves.state());
       render(state);
       if (failures.length) {
-        feedback(`Refreshed ${plural(entries.length - failures.length, 'save')}. Details for ${plural(failures.length, 'save')} couldn’t be refreshed; their previous details were kept.`, new Error(failures.join('\n')));
+        feedback(`Refreshed ${plural(entries.length - failures.length, 'save')}. Details for ${plural(failures.length, 'save')} couldn’t be refreshed. Reconnect the drive or check the files, then refresh again.`, new Error(failures.join('\n')));
       } else return entries.length ? `Details refreshed for ${plural(entries.length, 'save')}.` : 'Saved games are up to date.';
     });
   }
 }
 
-for (const key of ['backups', 'imports']) byId(`filter-${key}`).addEventListener('click', () => { collection = key; renderLibrary(); });
+for (const key of ['backups', 'imports']) byId(`filter-${key}`).addEventListener('click', () => { collection = key; renderLibrary(); if (key === 'backups' && !working) void refresh(false, true); });
 byId('library-search').addEventListener('input', () => renderLibrary());
 byId('library-search-scope').addEventListener('change', () => renderLibrary());
 byId('browse-games').addEventListener('click', () => activateTab('library'));
@@ -534,9 +567,10 @@ async function setProtection(enabled = byId('auto-backup').checked) {
   await run('Updating automatic backup settings…', async () => {
     try { render(await invoke(window.saves.protectionSettings({ enabled, startAtLogin: byId('start-login').checked }))); }
     catch (error) { render(current, true); throw error; }
-    return enabled ? 'Automatic backups are on. Keep this app running while you play.' : 'Automatic backups are off. Your existing copies are still available.';
+    return enabled ? 'Automatic backups enabled. Check the visible status for progress and the last completed copy.' : 'Automatic backups are off. Your existing copies are still available.';
   });
 }
+byId('view-auto-backups').addEventListener('click', () => { collection = 'backups'; byId('library-search').value = ''; byId('library-search-scope').value = 'people'; activateTab('library'); });
 byId('auto-backup').addEventListener('change', () => setProtection());
 byId('start-login').addEventListener('change', () => setProtection());
 byId('return-saves').addEventListener('click', () => run('Returning to your previous game…', async () => {

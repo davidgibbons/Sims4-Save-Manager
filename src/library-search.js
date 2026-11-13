@@ -30,8 +30,7 @@
   }
 
   function fieldsFor(entry, dateText) {
-    if (entry.kind === 'backup') return [['Note', [entry.title, entry.note]], ['Date', [dateText]]];
-    return [['Label', [entry.annotation?.label]], ['Save', [entry.saveName]], ['Family', householdNames(entry)], ['Sim', simNames(entry)], ['Note', [entry.annotation?.notes]], ['Date', [dateText]]];
+    return [['Label', [entry.annotation?.label]], ['Save', [entry.saveName]], ['Family', householdNames(entry)], ['Sim', simNames(entry)], ['Note', [entry.annotation?.notes, entry.note]], ['Checksum', [entry.hash]], ['Date', [dateText]]];
   }
 
   function summarize(kind, values) {
@@ -42,7 +41,7 @@
   function matchSave(entry, query, scope = 'people', dateText = '') {
     query = normalize(query);
     if (!query) return { hint: '', lotIds: [] };
-    if (scope === 'lots' && entry.kind !== 'backup') {
+    if (scope === 'lots') {
       const lots = filterLots(entry, query);
       return lots.length ? { hint: `Matches ${summarize('Lot', unique(lots.map(lot => lot.name || 'Unnamed lot')))}`, lotIds: lots.map(lot => lot.id) } : null;
     }
@@ -55,5 +54,11 @@
     return { hint: `Matches ${found.slice(0, 2).map(([kind, hits]) => summarize(kind, hits)).join(' · ')}`, lotIds: [] };
   }
 
-  return { SCOPES, matchSave, filterLots, filterHouseholds, lotHouseholds };
+  function duplicateCounts(entries) {
+    const counts = new Map();
+    for (const entry of entries) if (/^[a-f0-9]{64}$/.test(entry.hash || '')) counts.set(entry.hash, (counts.get(entry.hash) || 0) + 1);
+    return counts;
+  }
+
+  return { duplicateCounts, SCOPES, matchSave, filterLots, filterHouseholds, lotHouseholds };
 });
