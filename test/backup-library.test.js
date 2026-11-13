@@ -111,7 +111,7 @@ test('legacy sets with dotfiles or unsupported names stay listed and restorable'
   assert.equal(await fs.readFile(path.join(config.save_folder, '.DS_Store'), 'utf8'), 'finder');
 });
 
-test('unreadable saves remember the failure until the file changes', async t => {
+test('unreadable saves remember the failure until the file changes', { skip: process.platform === 'win32' && 'chmod cannot make files unreadable on Windows' }, async t => {
   const { config, folder, library } = await setup(t);
   const entry = (await library.list(config)).saves.find(save => save.inspectable);
   const file = path.join(folder, entry.name);
