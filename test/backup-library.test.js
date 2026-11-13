@@ -95,3 +95,34 @@ test('duplicate comparison uses the full digest, never the displayed prefix', ()
   const counts = duplicateCounts([{ hash: first }, { hash: second }, { hash: first }, { hash: 'unknown' }]);
   assert.equal(counts.get(first), 2); assert.equal(counts.get(second), 1); assert.equal(counts.size, 2);
 });
+
+test('legacy sets with dotfiles or unsupported names stay listed and restorable', async t => {
+  const { config, library } = await setup(t);
+  const legacy = path.join(config.backup_folder, 'legacy'); await fs.mkdir(legacy);
+  await fs.writeFile(path.join(legacy, 'Slot_x.dat'), 'legacy'); await fs.writeFile(path.join(legacy, '.DS_Store'), 'finder');
+  const hidden = path.join(config.backup_folder, 'hidden-only'); await fs.mkdir(hidden);
+  await fs.writeFile(path.join(hidden, '.DS_Store'), 'finder');
+  const state = await library.list(config);
+  assert.equal(state.backups.length, 3);
+  assert.deepEqual(state.saves.filter(entry => entry.backupName === 'legacy').map(entry => entry.name), ['Slot_x.dat']);
+  const setEntry = state.saves.find(entry => entry.backupName === 'hidden-only');
+  assert.equal(setEntry.inspectable, false); assert.equal(setEntry.count, 1);
+  await restoreBackup(config, setEntry.backupName);
+  assert.equal(await fs.readFile(path.join(config.save_folder, '.DS_Store'), 'utf8'), 'finder');
+});
+
+test('unreadable saves remember the failure until the file changes', async t => {
+  const { config, folder, library } = await setup(t);
+  const entry = (await library.list(config)).saves.find(save => save.inspectable);
+  const file = path.join(folder, entry.name);
+  await fs.chmod(file, 0);
+  t.after(() => fs.chmod(file, 0o644).catch(() => {}));
+  await assert.rejects(library.refresh(config, entry.id), /EACCES|EPERM/);
+  const failed = (await library.list(config)).saves.find(save => save.id === entry.id);
+  assert.equal(failed.hash, undefined); assert.match(failed.detailsError, /EACCES|EPERM/);
+  await fs.chmod(file, 0o644);
+  assert.equal((await library.list(config)).saves.find(save => save.id === entry.id).detailsError, undefined);
+  await library.refresh(config, entry.id);
+  const read = (await library.list(config)).saves.find(save => save.id === entry.id);
+  assert.ok(read.hash); assert.equal(read.detailsError, undefined);
+});

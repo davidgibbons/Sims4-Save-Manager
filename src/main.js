@@ -206,7 +206,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     handle('annotate-save', async (id, annotation) => { await archive.annotate(id, annotation); return state(); });
     handle('refresh-save-details', async id => { await archive.refreshDetails(id); return state(); });
-    handle('refresh-backup-details', async id => { await backupLibrary.refresh(config, id); return state(); });
+    handle('refresh-backup-details', id => backupLibrary.refresh(config, id));
     handle('backup-lot-preview', (id, lotId) => backupLibrary.preview(config, id, lotId));
     handle('lot-preview', (id, lotId) => archive.lotPreview(id, lotId));
     handle('try-save', async id => {

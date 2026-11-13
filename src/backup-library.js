@@ -3,12 +3,14 @@ const path = require('node:path');
 const manager = require('./save-manager');
 const { ARCHIVE_SAVE, inspectSave, readLotPreview } = require('./save-inspector');
 
+const validParts = parts => Array.isArray(parts) && parts.length === 2 && parts.every(part => typeof part === 'string' && part && !part.startsWith('.') && !/[\\/:]/.test(part)) && parts[0] !== 'Restored Backups' && parts[1] !== 'backup-note.txt';
+
 function createBackupLibrary() {
   const cache = new Map();
   async function selected(config, id, root) {
     let parts;
     try { parts = JSON.parse(id); } catch { throw new Error('Select a backed-up save first.'); }
-    if (!Array.isArray(parts) || parts.length !== 2 || parts.some(part => typeof part !== 'string' || !part || part.startsWith('.') || /[\\/:]/.test(part)) || parts[0] === 'Restored Backups' || parts[1] === 'backup-note.txt') throw new Error('Select a valid backed-up save.');
+    if (!validParts(parts)) throw new Error('Select a valid backed-up save.');
     root = root || await manager.directory(config.backup_folder);
     const [backupName, name] = parts;
     const folder = path.join(root, backupName);
@@ -19,7 +21,7 @@ function createBackupLibrary() {
     const key = JSON.stringify([root, id]);
     const signature = JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs, stat.ino]);
     if (cache.get(key)?.signature !== signature) cache.delete(key);
-    return { ...cache.get(key)?.details, id, file, name, size: stat.size, modified: stat.mtime.toISOString(), backupName, kind: 'backup', annotation: {}, inspectable: ARCHIVE_SAVE.test(name), key, signature };
+    return { ...cache.get(key)?.details, detailsError: cache.get(key)?.error, id, file, name, size: stat.size, modified: stat.mtime.toISOString(), backupName, kind: 'backup', annotation: {}, inspectable: ARCHIVE_SAVE.test(name), key, signature };
   }
   async function list(config) {
     const root = await manager.directory(config.backup_folder);
@@ -27,12 +29,15 @@ function createBackupLibrary() {
     const saves = [];
     const live = new Set();
     for (const backup of backups) {
-      const saveNames = backup.files.filter(name => ARCHIVE_SAVE.test(name));
-      for (const name of saveNames.length ? saveNames : backup.files) {
+      const names = backup.files.filter(name => validParts([backup.name, name]));
+      const saveNames = names.filter(name => ARCHIVE_SAVE.test(name));
+      const shown = saveNames.length ? saveNames : names;
+      for (const name of shown) {
         const entry = await selected(config, JSON.stringify([backup.name, name]), root);
         live.add(entry.key);
         saves.push({ ...entry, note: backup.note, count: backup.count });
       }
+      if (!shown.length) saves.push({ id: JSON.stringify([backup.name]), name: backup.name, backupName: backup.name, kind: 'backup', annotation: {}, inspectable: false, note: backup.note, count: backup.count });
     }
     for (const key of cache.keys()) if (!live.has(key)) cache.delete(key);
     return { backups, saves };
@@ -40,7 +45,9 @@ function createBackupLibrary() {
   async function refresh(config, id) {
     const entry = await selected(config, id);
     if (!entry.inspectable) return;
-    const details = await inspectSave(entry.file);
+    let details;
+    try { details = await inspectSave(entry.file); }
+    catch (error) { cache.set(entry.key, { ...cache.get(entry.key), signature: entry.signature, error: error.message }); throw error; }
     const after = await selected(config, id);
     if (after.signature !== entry.signature) throw new Error('The backed-up save changed while reading it. Refresh again.');
     cache.set(entry.key, { signature: entry.signature, details });

@@ -242,7 +242,10 @@ function importedDetails(panel, entry) {
   save.append(element('p', 'This list doesn’t check which packs are installed or identify missing mods. File dates can reflect copying.', 'hint'));
   const refresh = element('button', 'Refresh details', 'text-button'); refresh.id = 'refresh-save-details';
   refresh.addEventListener('click', () => run('Reading details from the stored copy…', async () => {
-    const state = await invoke(entry.kind === 'backup' ? window.saves.refreshBackupDetails(entry.id) : window.saves.refreshSaveDetails(entry.id)); render(state);
+    if (entry.kind === 'backup') {
+      try { await invoke(window.saves.refreshBackupDetails(entry.id)); }
+      finally { render(await invoke(window.saves.state())); }
+    } else render(await invoke(window.saves.refreshSaveDetails(entry.id)));
     if (selected[collection] === entry.id) byId('recorded-save-details').open = true;
     return 'Save details refreshed. Your original file date, label, and notes were kept.';
   }));
@@ -421,7 +424,8 @@ function renderLibrary(preserveDetail = false) {
       checksum.title = `SHA-256: ${entry.hash}`; checksum.setAttribute('aria-label', checksum.title);
       row.append(checksum);
       if (copies.get(entry.hash) > 1) row.append(element('span', `Identical save · ${copies.get(entry.hash)} copies`, 'save-match'));
-    } else if (entry.inspectable) row.append(element('span', 'Houses and checksum not read yet · Refresh to load'));
+    } else if (entry.detailsError) row.append(element('span', `Details unavailable: ${entry.detailsError} · Choose Refresh to try again`));
+    else if (entry.inspectable) row.append(element('span', 'Houses and checksum not read yet · Refresh to load'));
     if (entry.match.hint) row.append(element('span', entry.match.hint, 'save-match'));
     row.addEventListener('click', () => { selected[collection] = entry.id; renderLibrary(); byId('save-details').focus({ preventScroll: true }); });
     const li = element('li'); li.append(row); byId('saved-list').append(li);
@@ -518,19 +522,20 @@ async function run(message, action) {
 async function refresh(quiet = false, onlyMissing = false) {
   if (quiet) {
     try { render(await invoke(window.saves.state()), true);
-      if (!working && activeTab === 'library' && collection === 'backups' && current.backupSaves?.some(entry => entry.inspectable && !entry.hash)) void refresh(false, true);
+      if (!working && activeTab === 'library' && collection === 'backups' && current.backupSaves?.some(entry => entry.inspectable && !entry.hash && !entry.detailsError)) void refresh(false, true);
     } catch { /* The visible action reports its own errors. */ }
   } else {
     const readBackups = collection === 'backups';
     await run('Refreshing saved games…', async () => {
       let state = await invoke(window.saves.state());
-      const entries = readBackups ? state.backupSaves.filter(entry => entry.inspectable && (!onlyMissing || !entry.hash)) : state.archive.imports;
+      const entries = readBackups ? state.backupSaves.filter(entry => entry.inspectable && (!onlyMissing || (!entry.hash && !entry.detailsError))) : state.archive.imports;
       const failures = [];
       for (const [index, entry] of entries.entries()) {
         feedback(`Refreshing save details ${index + 1} of ${entries.length}…`);
-        try { state = await invoke(readBackups ? window.saves.refreshBackupDetails(entry.id) : window.saves.refreshSaveDetails(entry.id)); }
+        try { if (readBackups) await invoke(window.saves.refreshBackupDetails(entry.id)); else state = await invoke(window.saves.refreshSaveDetails(entry.id)); }
         catch (error) { failures.push(`${importedTitle(entry)}: ${error.message}`); }
       }
+      if (readBackups && entries.length) state = await invoke(window.saves.state());
       render(state);
       if (failures.length) {
         feedback(`Refreshed ${plural(entries.length - failures.length, 'save')}. Details for ${plural(failures.length, 'save')} couldn’t be refreshed. Reconnect the drive or check the files, then refresh again.`, new Error(failures.join('\n')));
