@@ -104,7 +104,7 @@ async function listBackups(config) {
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
-    result.push({ name: entry.name, note, count: names.length });
+    result.push({ name: entry.name, note, count: names.length, files: names });
   }
   return result.sort((a, b) => b.name.localeCompare(a.name));
 }

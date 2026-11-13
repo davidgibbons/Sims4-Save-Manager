@@ -48,7 +48,7 @@ test('restore reads Python V2 backups and keeps original saves in recovery', asy
   assert.equal(await fs.readFile(path.join(result.recovery, 'extra.save'), 'utf8'), 'extra');
   assert.equal(await fs.readFile(path.join(config.save_folder, 'keep-folder', 'untouched'), 'utf8'), 'keep');
   assert.deepEqual((await fs.readdir(config.save_folder)).sort(), ['Slot_00000001.save', 'keep-folder']);
-  assert.deepEqual(await listBackups(config), [{ name: path.basename(legacy), note: 'Old note', count: 1 }]);
+  assert.deepEqual(await listBackups(config), [{ name: path.basename(legacy), note: 'Old note', count: 1, files: ['Slot_00000001.save'] }]);
 });
 
 test('restore works when the current save folder is empty', async t => {

@@ -9,6 +9,8 @@ const { discoverSaves, cloudRoots, assertLocalFolder, assertGameClosed } = requi
 const { createArchive } = require('./archive');
 const { createAutoBackup } = require('./auto-backup');
 const { SAVE_NAME } = require('./save-inspector');
+const { createBackupLibrary } = require('./backup-library');
+const backupLibrary = createBackupLibrary();
 
 app.setName('Sims 4 Save Manager');
 const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
@@ -37,8 +39,9 @@ async function persist(next) {
 async function state() {
   let backups = [];
   let warning = '';
+  let backupSaves = [];
   if (config.backup_folder) {
-    try { backups = await manager.listBackups(config); }
+    try { ({ backups, saves: backupSaves } = await backupLibrary.list(config)); }
     catch (error) { warning = error.message; }
   }
   let backupWarning = '';
@@ -48,7 +51,7 @@ async function state() {
     const folder = await manager.directory(config.save_folder);
     saveStatus = { available: true, count: (await fs.readdir(folder, { withFileTypes: true })).filter(entry => entry.isFile() && SAVE_NAME.test(entry.name)).length };
   } catch { /* Settings shows the chosen path so the user can reconnect it. */ }
-  return { config, backups, warning, backupWarning, saveStatus, localBackupFolder, candidates, archive: archive.state(), protection: protection.status(), updates: updates.snapshot(), canStartAtLogin: app.isPackaged };
+  return { config, backups, backupSaves, warning, backupWarning, saveStatus, localBackupFolder, candidates, archive: archive.state(), protection: protection.status(), updates: updates.snapshot(), canStartAtLogin: app.isPackaged };
 }
 
 async function withLock(action) {
@@ -203,6 +206,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     handle('annotate-save', async (id, annotation) => { await archive.annotate(id, annotation); return state(); });
     handle('refresh-save-details', async id => { await archive.refreshDetails(id); return state(); });
+    handle('refresh-backup-details', async id => { await backupLibrary.refresh(config, id); return state(); });
+    handle('backup-lot-preview', (id, lotId) => backupLibrary.preview(config, id, lotId));
     handle('lot-preview', (id, lotId) => archive.lotPreview(id, lotId));
     handle('try-save', async id => {
       if (!await confirmSwap('Try this save in The Sims 4?')) return { canceled: true };
@@ -234,7 +239,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('backup', async note => ({ location: await manager.createBackup(config, note), ...await state() }));
     handle('restore', async name => {
       if (archive.state().session) throw new Error('Return to your game or choose Keep this save before restoring a backup.');
-      if (!await confirmSwap('Restore this backup?')) return { canceled: true };
+      if (!await confirmSwap('Restore this entire backup?', 'All save files in this backup set will replace the current set. Your current game will be copied to recovery backups first.')) return { canceled: true };
       const result = await manager.restoreBackup(config, name);
       await persist({ ...config, last_auto_files: null }); protection.acceptChange();
       return { ...result, ...await state() };

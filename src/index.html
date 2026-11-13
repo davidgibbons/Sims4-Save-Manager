@@ -54,7 +54,20 @@
           <ul id="candidates" aria-label="Detected save locations"></ul>
           <div class="location-field"><label for="backup-folder">Backup location</label><p>Where this app keeps copies you can restore later. Keep this outside OneDrive or iCloud.</p><div class="input-action"><input id="backup-folder" readonly placeholder="Choose where to keep backups"><button id="choose-backup">Choose…</button></div><p id="backup-warning" class="warning-text"></p><button id="use-local" class="text-button">Use recommended location</button><p class="hint">Changing this location does not move existing copies.</p></div>
         </section>
-        <section class="card settings-card" aria-labelledby="automatic-title"><h2 id="automatic-title">Automatic backups</h2><label class="check"><input id="auto-backup" type="checkbox"><span>Back up my saved changes automatically</span></label><p class="setting-help">The app waits for The Sims 4 to finish writing, then keeps a new copy. Older backups stay available.</p><label class="check"><input id="start-login" type="checkbox"><span>Start this app when I sign in</span></label><p id="login-help" class="setting-help">When automatic backups are on, closing the window leaves the app running in the tray or menu bar. Quit there to stop it.</p><details><summary>Backup status details</summary><p id="protection-status" class="technical"></p><p id="last-success" class="hint"></p></details></section>
+        <section class="card settings-card" aria-labelledby="automatic-title">
+          <h2 id="automatic-title">Automatic backups</h2>
+          <label class="check"><input id="auto-backup" type="checkbox" aria-describedby="automatic-how"><span>Back up my saved changes automatically</span></label>
+          <p id="automatic-how" class="setting-help">Starts checking as soon as you turn it on. The first copy starts after about 10–15 seconds without file changes; later saved changes create new copies. Copying large saves takes longer. Older backups stay available.</p>
+          <p class="setting-help"><strong>Keep this app running.</strong> You can close its window: it stays in the system tray (Windows) or menu bar (Mac). Choosing Quit stops automatic backups. Nothing runs while the computer is asleep. No background service is installed.</p>
+          <label class="check"><input id="start-login" type="checkbox"><span>Start this app when I sign in</span></label>
+          <p id="login-help" class="setting-help"></p>
+          <div role="status" aria-live="polite"><h3 id="automatic-status">Checking automatic backup status…</h3><p id="automatic-progress" class="hint"></p></div>
+          <p id="last-success" class="hint"></p>
+          <p id="automatic-location" class="hint technical"></p>
+          <p class="hint">Automatic copies appear in Saved games → Backups, labeled Automatic backup. This copies saved files; it cannot save unsaved progress in The Sims 4.</p>
+          <button id="view-auto-backups">View backups</button>
+          <details><summary>Backup status details</summary><p id="protection-status" class="technical"></p></details>
+        </section>
         <section class="card settings-card" aria-labelledby="updates-title"><div class="section-heading"><div><h2 id="updates-title">App updates</h2><p id="app-version" class="hint"></p></div><button id="update-action" disabled>Check for updates</button></div><p id="update-status" role="status" aria-live="polite">Loading update status…</p><progress id="update-progress" max="100" value="0" aria-label="Update download progress" hidden></progress></section>
       </section>
     </main>
